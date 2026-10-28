@@ -2,14 +2,23 @@
 
 Applies to the whole repository. Preserve verified facts, workflows, decisions, and reproducible pitfalls here across sessions. Update this file and README when behavior changes. Proposed solutions below are not implemented fixes.
 
+## Accepted decisions (2026-10-28)
+
+- Product name: **DungeonCrawler**. Goal: portfolio project and practice in programming and AI-assisted development.
+- The owner makes high-level decisions and authorizes the assistant to implement code; do not assume the owner wants to write features as exercises.
+- Combine frontend and backend in this repository, preserving both histories and separate deployments. Keep the original backend intact until deployment is verified.
+- This migration covers structure, docs, local setup, and deployment configuration. Existing gameplay defects are deferred.
+- The backend is currently undeployed. Do not provision a separate local backend or development database unless requested.
+- GitHub rename/publishing and deployment reconnection follow local review. The local checkout remains named JS_Game; the intended GitHub name is DungeonCrawler.
+
 ## Baseline (inspected 2026-10-28)
 
-- Static HTML/CSS/JavaScript game. No framework, dependencies, package manifest, bundler, automated tests, or tracked deployment configuration.
-- `index.html` loads only `game.js` as a classic script at the end of the body, after all required markup.
-- `game.js` owns the runtime. Section comments organize input, helpers/UI, tiles/rooms/dungeon, entities/items/living actors, weapons/projectiles, player/enemies/goo, chest/door, and engine/API code.
-- `styles.css` owns presentation. Sprites are `images/pengu.ico` and `images/chest.ico`; favicon is `images/favicon.ico`.
-- `drawing.js` is an unreferenced experiment, not another game entry point.
-- Backend repository: https://github.com/LuxAlexander/JS_Backend. Its implementation is outside this checkout.
+- Static HTML/CSS/JavaScript frontend in `frontend/`; Express/MongoDB backend in `backend/`. No frontend framework or build step; dependencies and lockfile live only in the backend. No automated test suite.
+- `frontend/index.html` loads only `game.js` as a classic script at the end of the body, after all required markup.
+- `frontend/game.js` owns the runtime. Section comments organize input, helpers/UI, tiles/rooms/dungeon, entities/items/living actors, weapons/projectiles, player/enemies/goo, chest/door, and engine/API code.
+- `frontend/styles.css` owns presentation. Sprites are `images/pengu.ico` and `images/chest.ico`; favicon is `images/favicon.ico`.
+- `frontend/drawing.js` is an unreferenced experiment, not another game entry point.
+- Backend imported from https://github.com/LuxAlexander/JS_Backend with all three original commits preserved as merge ancestry. Root `netlify.toml` publishes only `frontend/`; `backend/railway.json` configures the API service.
 
 ## Runtime relationships
 
@@ -25,11 +34,18 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 
 1. Inspect the relevant code and working tree; preserve unrelated changes.
 2. Follow the existing plain JavaScript classes and section organization. Avoid adding tooling solely for small maintenance work.
-3. After runtime edits, run `node --check game.js`. This checks parsing, not browser behavior.
-4. Serve the root with `py -m http.server 8000` and open `http://localhost:8000`. Directly opening `index.html` also runs gameplay; HTTP provides a predictable origin.
+3. After runtime edits, run `node --check frontend/game.js` and `npm --prefix backend run check`. This checks parsing, not browser behavior.
+4. Serve the root with `py -m http.server 8000 --directory frontend` and open `http://localhost:8000`. Directly opening `frontend/index.html` also runs gameplay; HTTP provides a predictable origin.
 5. For gameplay changes, check startup/sprites, movement/walls, sword kills, bow pickup/switch/direction, health/speed, goo slow, chest reward once per floor, door healing, death overlay, and retry. Use controlled state/randomness when reproducing random-room defects.
-6. Inspect console/network errors. Mock API requests during submission tests; local runs target production. Do not send dummy scores without explicit authorization.
+6. Inspect console/network errors. Mock API requests during submission tests; requests still target the old remote URL even though the backend is currently undeployed. Do not send dummy scores without explicit authorization.
 7. Report actual verification and limitations. No automated gameplay harness currently exists.
+
+## Backend maintenance
+
+- Read `backend/AGENTS.md` before backend changes. CommonJS modules, Express 5, MongoDB 7; Node.js minimum 20.19 (driver requirement).
+- Use `npm --prefix backend ci` for dependencies. `npm --prefix backend run check` parses all backend source. No database is needed for this check.
+- Use hosting variables for PORT, ATLAS_URI, DB_NAME; `backend/.env.example` contains placeholders only. Never copy the old .env or node_modules into version control.
+- Deployment details and GitHub migration status are in README. The local migration branch is `codex/dungeoncrawler-monorepo`. Do not squash/rewrite its history if preserving both original histories.
 
 ## Backend contract
 
