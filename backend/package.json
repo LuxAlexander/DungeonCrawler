@@ -1,0 +1,24 @@
+{
+  "name": "dungeoncrawler-backend",
+  "version": "1.0.0",
+  "description": "DungeonCrawler leaderboard API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js && node --check db/conn.js && node --check endpoints/leaderboard.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mongodb": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

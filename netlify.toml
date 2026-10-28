@@ -1,0 +1,4 @@
+# Deploy only public game files, never the backend or repository root.
+[build]
+  base = "."
+  publish = "frontend"
