@@ -13,6 +13,32 @@
 <body>
     <div id="main-layout">
 
+        <aside id="player-stats" class="side-panel" aria-labelledby="stats-heading">
+            <h2 id="stats-heading">YOUR RUN</h2>
+            <dl class="stat-list">
+                <div><dt>Floor</dt><dd id="floor-count">1</dd></div>
+                <div><dt>Time</dt><dd id="run-time">0:00</dd></div>
+                <div><dt>Health</dt><dd id="health-stat">100 / 100</dd></div>
+                <div><dt>Enemies left</dt><dd id="remaining-count">4</dd></div>
+            </dl>
+            <h3>YOUR BUILD</h3>
+            <dl class="stat-list">
+                <div><dt>Weapon</dt><dd id="weapon-stat">Sword</dd></div>
+                <div><dt>Damage / hit</dt><dd id="damage-stat">25</dd></div>
+                <div><dt>Move speed</dt><dd id="speed-stat">240 px/s</dd></div>
+                <div><dt>Condition</dt><dd id="status-stat">Normal</dd></div>
+            </dl>
+            <p class="panel-note">Clear the floor for treasure, or find the door and press onward.</p>
+            <h3>KNOW YOUR SLIMES</h3>
+            <ul class="slime-guide">
+                <li><span class="slime-dot moss-dot" aria-hidden="true"></span><span><strong>Moss</strong><small>Goo slows your steps</small></span></li>
+                <li><span class="slime-dot fire-dot" aria-hidden="true"></span><span><strong>Ember</strong><small>Fire burns underfoot</small></span></li>
+                <li><span class="slime-dot water-dot" aria-hidden="true"></span><span><strong>Tide</strong><small>Water carries you forward</small></span></li>
+            </ul>
+            <h3>CONTROLS</h3>
+            <p class="panel-note">WASD / arrows: move<br>Space: attack<br>Q: switch weapon</p>
+        </aside>
+
         <div id="game-wrapper">
             <div id="game-over-overlay" style="display: none;">
                 <h2>GAME OVER</h2>
@@ -21,31 +47,36 @@
                 <button id="submit-btn">SUBMIT</button>
                 <button id="retry-btn">Retry</button>
             </div>
-            <div id="ui-layer">
-                <div class="stats">
-                    <div>⚔ ENEMIES: <span id="slain-count">0</span></div>
-                    <div>❤ HP: <span id="hp-count">100</span>%</div>
-                    <div>💰 GOLD: <span id="gold-count">0</span></div>
+            <header id="ui-layer">
+                <div class="hud-heading">
+                    <div><span class="eyebrow">A PENGUIN. A LABYRINTH. NO TURNING BACK.</span><h1>Dungeon<span>Crawler</span></h1></div>
+                    <span id="floor-badge" class="depth-badge">DEPTH 01</span>
                 </div>
-
-                <div class="inventory-box">
-                    INVENTORY:
-                    <span id="inventory-list">
-                        <span class="inv-item active-weapon">Sword</span>
-                    </span>
+                <div class="hud-readings">
+                    <div class="health-card">
+                        <div class="health-caption"><span>VITALITY</span><strong><span id="hp-count">100</span> / 100</strong></div>
+                        <progress id="health-meter" class="health-meter" max="100" value="100" aria-label="Health"></progress>
+                    </div>
+                    <div class="hud-counter"><span>SLIMES SLAIN</span><strong id="slain-count">0</strong></div>
+                    <div class="hud-counter gold-counter"><span>GOLD FOUND</span><strong id="gold-count">0</strong></div>
                 </div>
-
-                <div id="log">Welcome to the Labyrinth...</div>
-            </div>
+                <div class="hud-footer">
+                    <div class="inventory-box"><span class="inventory-label">EQUIPPED</span><span id="inventory-list"><span class="inv-item active-weapon">Sword</span></span><kbd>Q</kbd></div>
+                    <p id="floor-objective">Clear for treasure or find the next passage.</p>
+                </div>
+                <div id="log" role="status">Welcome to the Labyrinth...</div>
+            </header>
 
             <canvas id="space"></canvas>
         </div>
 
-        <div id="leaderboard">
-            <h3>TOP EXPLORERS</h3>
+        <aside id="leaderboard" class="side-panel" aria-labelledby="leaderboard-heading">
+            <h2 id="leaderboard-heading">TOP EXPLORERS</h2>
+            <p id="leaderboard-status" class="panel-note" role="status">Local leaderboard · this browser</p>
+            <p class="leaderboard-columns" aria-hidden="true"><span>Explorer</span><span>Kills / gold</span></p>
             <ul id="leaderboard-list">
             </ul>
-        </div>
+        </aside>
 
     </div>
 

@@ -8,7 +8,7 @@ const chestImg = new Image();
 chestImg.src = "./images/chest.ico";
 
 canvas.width = 1000;
-canvas.height = 500;
+canvas.height = 520;
 
 /* ================= INPUT ================= */
 
@@ -18,33 +18,46 @@ let goldCollected = 0;
 let hasBow = false;
 let difficulty = 1;
 let goldpickup = false;
+let runTime = 0;
 
-let leaderboardData = [
-    { name: "x", score: 5 },
-    { name: "y", score: 10 },
-    { name: "z", score: 15 }
-];
+const LOCAL_SCORES_KEY = "dungeoncrawler.scores.v1";
+let storageAvailable = true;
+let localScores = readLocalScores();
+let leaderboardData = localScores;
+let leaderboardMode = "local";
+let leaderboardRequest = 0;
+let submitting = false;
+let effects = [];
 
 const keys = {
     left: false, right: false, up: false, down: false,
     attack: false, switch: false
 };
 
-window.addEventListener("keydown", e => {
-    if (["a", "ArrowLeft"].includes(e.key)) keys.left = true;
-    if (["d", "ArrowRight"].includes(e.key)) keys.right = true;
-    if (["w", "ArrowUp"].includes(e.key)) keys.up = true;
-    if (["s", "ArrowDown"].includes(e.key)) keys.down = true;
-    if (e.key === " ") keys.attack = true;
-    if (e.key === "q") keys.switch = true;
-});
+function resetKeys() {
+    Object.keys(keys).forEach(key => keys[key] = false);
+}
 
-window.addEventListener("keyup", e => {
-    if (["a", "ArrowLeft"].includes(e.key)) keys.left = false;
-    if (["d", "ArrowRight"].includes(e.key)) keys.right = false;
-    if (["w", "ArrowUp"].includes(e.key)) keys.up = false;
-    if (["s", "ArrowDown"].includes(e.key)) keys.down = false;
-    if (e.key === " ") keys.attack = false;
+function handleKey(e, pressed) {
+    const key = e.key.toLowerCase();
+    const controls = { a: "left", arrowleft: "left", d: "right", arrowright: "right",
+        w: "up", arrowup: "up", s: "down", arrowdown: "down", " ": "attack", q: "switch" };
+    const action = controls[key];
+    if (!action) return;
+    if (!pressed) {
+        keys[action] = false;
+        return;
+    }
+    if (isGameOver || e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+    e.preventDefault();
+    if (action !== "switch" || !e.repeat) keys[action] = true;
+}
+
+window.addEventListener("keydown", e => handleKey(e, true));
+window.addEventListener("keyup", e => handleKey(e, false));
+window.addEventListener("blur", resetKeys);
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) resetKeys();
 });
 
 /* ================= HELPERS ================= */
@@ -52,8 +65,29 @@ window.addEventListener("keyup", e => {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
+const center = entity => ({ x: entity.pos.x + entity.width / 2, y: entity.pos.y + entity.height / 2 });
+
+function damageEffect(entity, damage, color) {
+    effects.push({ ...center(entity), text: "−" + Math.ceil(damage), color, life: 0.65, duration: 0.65 });
+}
+
+function drawEffects(deltaTime) {
+    effects = effects.filter(effect => effect.life > 0);
+    effects.forEach(effect => {
+        effect.life -= deltaTime;
+        c.save();
+        c.globalAlpha = Math.max(0, effect.life / effect.duration);
+        c.font = "bold 16px monospace";
+        c.textAlign = "center";
+        c.fillStyle = effect.color;
+        c.fillText(effect.text, effect.x, effect.y - 18 - (effect.duration - effect.life) * 35);
+        c.restore();
+    });
+}
+
 /* ================= UI UPDATER ================= */
 function updateUI(logMsg = null) {
+    updateStats();
     const slainElem = document.getElementById("slain-count");
     const hpElem = document.getElementById("hp-count");
     const goldElem = document.getElementById("gold-count");
@@ -81,19 +115,119 @@ function updateUI(logMsg = null) {
     }
 }
 
+function updateStats() {
+    if (!player || !dungeon) return;
+    const minutes = Math.floor(runTime / 60);
+    const seconds = Math.floor(runTime % 60).toString().padStart(2, "0");
+    const stats = {
+        "floor-count": dungeon.floor,
+        "floor-badge": "DEPTH " + String(dungeon.floor).padStart(2, "0"),
+        "run-time": minutes + ":" + seconds,
+        "health-stat": Math.ceil(player.health) + " / " + player.maxHealth,
+        "hp-count": Math.ceil(player.health),
+        "weapon-stat": player.weapon.name,
+        "damage-stat": player.weapon.damage,
+        "speed-stat": (player.sliding ? Math.hypot(player.slideVelocity.x, player.slideVelocity.y) : player.speed * 60 * (player.slowed ? 0.5 : 1)).toFixed(0) + " px/s",
+        "status-stat": [player.inFire && "Burning", player.sliding && "Sliding", player.slowed && "Slowed"].filter(Boolean).join(" · ") || "Normal",
+        "remaining-count": dungeon.room.entities.filter(e => e instanceof Enemy && !e.dead).length
+    };
+    const healthMeter = document.getElementById("health-meter");
+    if (healthMeter) {
+        healthMeter.max = player.maxHealth;
+        healthMeter.value = player.health;
+        healthMeter.className = player.health <= 30 ? "health-meter critical" : "health-meter";
+    }
+    const objective = document.getElementById("floor-objective");
+    if (objective) objective.textContent = goldpickup ? "Treasure claimed. Find the next passage." :
+        stats["remaining-count"] ? stats["remaining-count"] + " slimes remain · clear for treasure or press onward" : "Floor cleared · find your treasure chest";
+    Object.entries(stats).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element && element.textContent !== String(value)) element.textContent = value;
+    });
+}
+
+/* ================= LEADERBOARD ================= */
+function validScore(entry) {
+    return entry && typeof entry.name === "string" && typeof entry.score === "number" &&
+        Number.isFinite(entry.score) && entry.score >= 0 && Number.isInteger(entry.score) &&
+        (entry.gold === undefined || (typeof entry.gold === "number" && Number.isFinite(entry.gold) && entry.gold >= 0));
+}
+
+function rankedScores(entries) {
+    return entries.filter(validScore).map(entry => ({
+        name: entry.name.trim().slice(0, 10) || "Unknown", score: entry.score, gold: entry.gold || 0
+    })).sort((a, b) => b.score - a.score || b.gold - a.gold).slice(0, 10);
+}
+
+function readLocalScores() {
+    let stored;
+    try { stored = localStorage.getItem(LOCAL_SCORES_KEY); }
+    catch { storageAvailable = false; return []; }
+    try {
+        const entries = JSON.parse(stored || "[]");
+        return Array.isArray(entries) ? rankedScores(entries) : [];
+    } catch { return []; }
+}
+
+function saveLocalScore(entry) {
+    localScores = rankedScores([...localScores, entry]);
+    try {
+        localStorage.setItem(LOCAL_SCORES_KEY, JSON.stringify(localScores));
+    } catch {
+        storageAvailable = false;
+    }
+}
+
+function useLocalLeaderboard() {
+    leaderboardMode = "local";
+    leaderboardData = localScores;
+    updateLeaderboardUI();
+}
+
 function updateLeaderboardUI() {
     const list = document.getElementById("leaderboard-list");
+    const status = document.getElementById("leaderboard-status");
+    if (status) status.textContent = leaderboardMode === "online" ? "Online leaderboard" :
+        storageAvailable ? "Local leaderboard · this browser" : "Local leaderboard · this session only";
     if (!list) return;
-    const sorted = [...leaderboardData].sort((a, b) => b.score - a.score);
-
-    list.innerHTML = sorted.map((entry, i) => `
-        <li>
-            <span>${i + 1}. ${entry.name}</span>
-            <span style="color: slimegreen">${entry.score}</span>
-            <span style="color: yellow">${entry.gold || 0}</span>
-        </li>
-    `).join("");
+    list.replaceChildren();
+    if (!leaderboardData.length) {
+        const empty = document.createElement("li");
+        empty.textContent = "No scores yet. Finish a run to set the first!";
+        list.appendChild(empty);
+    }
+    leaderboardData.forEach((entry, i) => {
+        const row = document.createElement("li");
+        [i + 1 + ". " + entry.name, entry.score, entry.gold || 0].forEach((value, column) => {
+            const cell = document.createElement("span");
+            cell.textContent = String(value);
+            if (column) cell.className = column === 1 ? "leaderboard-score" : "leaderboard-gold";
+            row.appendChild(cell);
+        });
+        list.appendChild(row);
+    });
 }
+
+async function apiRequest(path, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch("https://jsgame-production.up.railway.app/api/" + path,
+            { ...options, signal: controller.signal });
+        if (!response.ok) throw new Error("Leaderboard HTTP " + response.status);
+        // Keep the deadline active while reading a potentially stalled JSON body.
+        if (path === "leaderboard") return await response.json();
+        return response;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+const SLIME_TYPES = {
+    goo: { body: "#66ce89", light: "#b1ef9d", dark: "#32794f", name: "Moss" },
+    fire: { body: "#f78345", light: "#ffcf70", dark: "#a63d36", name: "Ember" },
+    water: { body: "#53bde6", light: "#b5f0fa", dark: "#286caa", name: "Tide" }
+};
 
 /* ================= TILE ================= */
 
@@ -103,9 +237,60 @@ class Tile {
         this.size = size;
         this.walkable = walkable;
     }
-    draw() {
-        c.fillStyle = this.walkable ? "#2d2d2d" : "#111";
-        c.fillRect(this.x, this.y, this.size, this.size);
+    draw(ctx = c) {
+        const { x, y, size } = this;
+        const seed = ((x / size) * 17 + (y / size) * 31) % 23;
+        if (this.walkable) {
+            ctx.fillStyle = seed % 2 ? "#1a292b" : "#1e2d2e";
+            ctx.fillRect(x, y, size, size);
+            ctx.fillStyle = "#101c20";
+            ctx.fillRect(x, y, size, 2);
+            ctx.fillRect(x, y, 2, size);
+            ctx.fillStyle = "#293a3a";
+            ctx.fillRect(x + 4, y + 3, size - 8, 1);
+            if (seed % 3 === 0) {
+                ctx.fillStyle = "#304240";
+                ctx.fillRect(x + 8 + seed % 10, y + 23, 6, 2);
+                ctx.fillRect(x + 12 + seed % 10, y + 25, 2, 4);
+            }
+            if (seed % 7 === 0) {
+                ctx.fillStyle = "#344437";
+                ctx.fillRect(x + 28, y + 8, 3, 3);
+                ctx.fillRect(x + 25, y + 10, 2, 2);
+            }
+            return;
+        }
+        ctx.fillStyle = "#101a20";
+        ctx.fillRect(x, y, size, size);
+        ctx.fillStyle = seed % 2 ? "#3c5057" : "#34474f";
+        ctx.fillRect(x + 1, y + 1, size - 2, size - 7);
+        ctx.fillStyle = "#627778";
+        ctx.fillRect(x + 2, y + 1, size - 4, 3);
+        ctx.fillStyle = "#26383f";
+        ctx.fillRect(x + 2, y + 17, size - 4, 2);
+        ctx.fillRect(x + (seed % 2 ? 13 : 26), y + 4, 2, 13);
+        ctx.fillRect(x + (seed % 2 ? 27 : 12), y + 19, 2, 13);
+        ctx.fillStyle = "#17262d";
+        ctx.fillRect(x + 2, y + size - 7, size - 4, 5);
+        if (seed % 4 === 0) {
+            ctx.fillStyle = "#547351";
+            ctx.fillRect(x + 3, y + 4, 12, 3);
+            ctx.fillRect(x + 5, y + 7, 5, 6);
+            ctx.fillStyle = "#7b8f58";
+            ctx.fillRect(x + 4, y + 4, 5, 2);
+        }
+        if (seed === 9) {
+            ctx.fillStyle = "#171d22";
+            ctx.fillRect(x + 16, y + 18, 8, 9);
+            ctx.save();
+            ctx.shadowColor = "#ffb04f";
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = "#ef873b";
+            ctx.fillRect(x + 17, y + 10, 6, 10);
+            ctx.fillStyle = "#ffe4a0";
+            ctx.fillRect(x + 19, y + 8, 3, 9);
+            ctx.restore();
+        }
     }
 }
 
@@ -130,6 +315,7 @@ class Room {
     generateLabyrinth() {
         goldpickup = false;
         this.tiles = [];
+        this.terrain = null;
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 this.tiles.push(new Tile(x * this.tileSize, y * this.tileSize, this.tileSize, false));
@@ -190,6 +376,7 @@ class Room {
     }
 
     isWalkable(x, y, w, h) {
+        if (x < 0 || y < 0 || x + w > this.cols * this.tileSize || y + h > this.rows * this.tileSize) return false;
         return !this.tiles.some(t =>
             !t.walkable &&
             x < t.x + t.size &&
@@ -199,12 +386,100 @@ class Room {
         );
     }
 
+    // Sweep each axis to the nearest wall: slide without tunnelling at high speed.
+    moveActor(actor, dx, dy) {
+        const moveAxis = (axis, amount) => {
+            if (!amount) return;
+            const horizontal = axis === "x";
+            const size = horizontal ? actor.width : actor.height;
+            const otherAxis = horizontal ? "y" : "x";
+            const otherSize = horizontal ? actor.height : actor.width;
+            const limit = (horizontal ? this.cols : this.rows) * this.tileSize - size;
+            const start = actor.pos[axis];
+            let end = clamp(start + amount, 0, limit);
+            for (const tile of this.tiles) {
+                if (tile.walkable || actor.pos[otherAxis] >= tile[otherAxis] + tile.size ||
+                    actor.pos[otherAxis] + otherSize <= tile[otherAxis]) continue;
+                if (amount > 0 && start + size <= tile[axis]) end = Math.min(end, tile[axis] - size);
+                if (amount < 0 && start >= tile[axis] + tile.size) end = Math.max(end, tile[axis] + tile.size);
+            }
+            actor.pos[axis] = end;
+        };
+        moveAxis("x", dx);
+        moveAxis("y", dy);
+    }
+
+    hasLineOfSight(a, b) {
+        const distance = dist(a, b);
+        const steps = Math.max(1, Math.ceil(distance / 5));
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            if (!this.isWalkable(a.x + (b.x - a.x) * t - 1, a.y + (b.y - a.y) * t - 1, 2, 2)) return false;
+        }
+        return true;
+    }
+
+    findPath(actor, destination) {
+        const origin = center(actor);
+        const cell = point => ({ x: Math.floor(point.x / this.tileSize), y: Math.floor(point.y / this.tileSize) });
+        const start = cell(origin), goal = cell(destination);
+        const key = point => point.y * this.cols + point.x;
+        const queue = [start], parents = new Map([[key(start), null]]);
+        let found = false;
+        for (let i = 0; i < queue.length; i++) {
+            const current = queue[i];
+            if (current.x === goal.x && current.y === goal.y) { found = true; break; }
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const next = { x: current.x + dx, y: current.y + dy };
+                const tile = this.getTile(next.x, next.y);
+                if (!tile?.walkable || parents.has(key(next))) continue;
+                parents.set(key(next), current);
+                queue.push(next);
+            }
+        }
+        if (!found) return [];
+        const cells = [];
+        for (let current = goal; current; current = parents.get(key(current))) cells.push(current);
+        cells.reverse();
+        const points = cells.slice(1).map(point => ({ x: (point.x + 0.5) * this.tileSize, y: (point.y + 0.5) * this.tileSize }));
+        if (!points.length) return [{ x: (start.x + 0.5) * this.tileSize, y: (start.y + 0.5) * this.tileSize }];
+        // Align across the corridor before turning; don't backtrack along the travel axis on replanning.
+        points.unshift(cells[1].x !== start.x ? { x: origin.x, y: (start.y + 0.5) * this.tileSize } :
+            { x: (start.x + 0.5) * this.tileSize, y: origin.y });
+        return points;
+    }
+
+    drawTerrain() {
+        if (!this.terrain) {
+            this.terrain = document.createElement("canvas");
+            this.terrain.width = this.cols * this.tileSize;
+            this.terrain.height = this.rows * this.tileSize;
+            const terrainContext = this.terrain.getContext("2d");
+            this.tiles.forEach(tile => tile.draw(terrainContext));
+        }
+        c.drawImage(this.terrain, 0, 0);
+    }
+
+    draw() {
+        this.drawTerrain();
+        this.doors.forEach(d => d.draw());
+        const visible = this.entities.filter(e => !e.dead);
+        [...visible.filter(e => e instanceof GooPuddle), ...visible.filter(e => !(e instanceof GooPuddle))].forEach(e => {
+            e.draw();
+            if (e instanceof Living) e.drawHealth();
+        });
+    }
+
     update(deltaTime) {
-        this.tiles.forEach(t => t.draw());
+        this.drawTerrain();
         this.doors.forEach(d => d.draw());
 
         this.entities = this.entities.filter(e => !e.dead);
-        this.entities.forEach(e => e.update(deltaTime));
+        player.onWater = false;
+        player.inFire = false;
+        player.speedModifier = 1;
+        this.entities.filter(e => e instanceof GooPuddle).forEach(e => e.update(deltaTime));
+        this.entities.filter(e => !(e instanceof GooPuddle)).forEach(e => e.update(deltaTime));
 
         const enemiesLeft = this.entities.some(e => e instanceof Enemy);
         const chestExists = this.entities.some(e => e instanceof Chest);
@@ -221,16 +496,19 @@ class Room {
 class Dungeon {
     constructor() {
         this.currentRoom = null;
+        this.floor = 0;
         this.nextLevel();
     }
 
     nextLevel() {
+        this.floor++;
         const newRoom = new Room(25, 12, 40);
         newRoom.doors.push(new Door(960, 200));
 
         for (let i = 0; i < 4; i++) {
             const pos = newRoom.getSafePos();
-            newRoom.entities.push(new Enemy(pos.x, pos.y));
+            const element = ["goo", "fire", "water", ["goo", "fire", "water"][Math.floor(Math.random() * 3)]][i];
+            newRoom.entities.push(new Enemy(pos.x, pos.y, element));
         }
 
         for (let i = 0; i < 3; i++) {
@@ -336,6 +614,7 @@ class Item extends Entity {
     }
 
     update(deltaTime) {
+        if (player.health <= 0) { this.draw(); return; }
         if (dist(this.pos, player.pos) < 30) {
             if (this.type === "health" && player.health < player.maxHealth) {
                 player.health = Math.min(player.maxHealth, player.health + 50);
@@ -365,15 +644,25 @@ class Living extends Entity {
         this.maxHealth = 100;
         this.health = 100;
         this.speed = 2;
+        this.hitFlash = 0;
     }
     onHit(dmg) {
+        if (this.dead || dmg <= 0) return false;
+        this.hitFlash = 0.18;
+        damageEffect(this, Math.min(dmg, this.health), this instanceof Player ? "#ff7777" : "#ffe6a3");
         this.health -= dmg;
         if (this.health <= 0) {
             this.health = 0;
             this.destroy();
         }
+        return true;
     }
+    tickFeedback(deltaTime) { this.hitFlash = Math.max(0, this.hitFlash - deltaTime); }
     drawHealth() {
+        if (this.hitFlash > 0) {
+            c.fillStyle = "rgba(255,255,255,0.5)";
+            c.fillRect(this.pos.x, this.pos.y, this.width, this.height);
+        }
         c.fillStyle = "black";
         c.fillRect(this.pos.x, this.pos.y - 8, this.width, 5);
         c.fillStyle = "lime";
@@ -392,15 +681,19 @@ class Living extends Entity {
 class Sword {
     constructor() { this.name = "Sword"; this.damage = 25; this.range = 50; }
     attack(owner, room) {
-        room.entities.forEach(e => {
-            if (e instanceof Enemy && dist(owner.pos, e.pos) < this.range) {
-                e.onHit(this.damage);
+        const origin = center(owner);
+        const angle = Math.atan2(owner.dir.y, owner.dir.x);
+        owner.swing = { angle, remaining: 0.24, duration: 0.24, range: this.range };
+        room.entities.forEach(enemy => {
+            if (!(enemy instanceof Enemy) || enemy.dead) return;
+            const target = center(enemy);
+            const offset = Math.atan2(target.y - origin.y, target.x - origin.x) - angle;
+            const difference = Math.atan2(Math.sin(offset), Math.cos(offset));
+            if (dist(origin, target) <= this.range + enemy.width / 2 && Math.abs(difference) <= 1.2 &&
+                room.hasLineOfSight(origin, target)) {
+                enemy.onHit(this.damage);
             }
         });
-        c.beginPath();
-        c.arc(owner.pos.x + 15, owner.pos.y + 15, this.range, 0, Math.PI * 2);
-        c.strokeStyle = "rgba(255,255,255,0.5)";
-        c.stroke();
     }
 }
 
@@ -422,7 +715,7 @@ class Arrow extends Entity {
         this.pos.y += this.vel.y * deltaTime * 60;
 
         dungeon.room.entities.forEach(e => {
-            if (e instanceof Enemy && !e.dead && dist(this.pos, e.pos) < 25) {
+            if (e instanceof Enemy && !e.dead && !this.dead && dist(this.pos, e.pos) < 25) {
                 e.onHit(this.damage);
                 this.destroy();
             }
@@ -446,6 +739,15 @@ class Player extends Living {
         this.speedModifier = 1;
         this.speed = 4;
         this.cooldown = 0;
+        this.slowed = false;
+        this.invulnerable = 0;
+        this.swing = null;
+        this.onWater = false;
+        this.inFire = false;
+        this.fireCooldown = 0;
+        this.sliding = false;
+        this.slideTime = 0;
+        this.slideVelocity = { x: 0, y: 0 };
     }
 
     get weapon() { return this.inventory.weapons[this.inventory.index]; }
@@ -456,20 +758,79 @@ class Player extends Living {
         let mag = Math.hypot(dx, dy) || 1;
         dx /= mag; dy /= mag;
 
-        let moveSpeed = this.speed * this.speedModifier;
-        let nx = this.pos.x + dx * moveSpeed * deltaTime * 60;
-        let ny = this.pos.y + dy * moveSpeed * deltaTime * 60;
-
-        if (dungeon.room.isWalkable(nx, ny, this.width, this.height)) {
-            this.pos.x = nx;
-            this.pos.y = ny;
-            if (dx || dy) this.dir = { x: dx, y: dy };
+        this.slowed = this.speedModifier < 1;
+        const speed = this.speed * this.speedModifier * 60;
+        const desired = { x: dx * speed, y: dy * speed };
+        if (this.onWater) {
+            if (this.slideTime <= 0) this.slideVelocity = { x: this.dir.x * speed * 1.35, y: this.dir.y * speed * 1.35 };
+            if (dx || dy) {
+                const steering = 1 - Math.exp(-2.5 * deltaTime);
+                this.slideVelocity.x += (desired.x * 1.35 - this.slideVelocity.x) * steering;
+                this.slideVelocity.y += (desired.y * 1.35 - this.slideVelocity.y) * steering;
+            }
+            this.slideTime = 0.45;
+        } else if (this.slideTime > 0) {
+            this.slideTime = Math.max(0, this.slideTime - deltaTime);
+            const friction = 1 - Math.exp(-8 * deltaTime);
+            this.slideVelocity.x += (desired.x - this.slideVelocity.x) * friction;
+            this.slideVelocity.y += (desired.y - this.slideVelocity.y) * friction;
         }
+        this.sliding = this.onWater || this.slideTime > 0;
+        const velocity = this.sliding ? this.slideVelocity : desired;
+        const before = { ...this.pos };
+        const requestedX = velocity.x * deltaTime, requestedY = velocity.y * deltaTime;
+        dungeon.room.moveActor(this, requestedX, requestedY);
+        if (Math.abs(this.pos.x - before.x - requestedX) > 0.01) this.slideVelocity.x = 0;
+        if (Math.abs(this.pos.y - before.y - requestedY) > 0.01) this.slideVelocity.y = 0;
+        const movedX = this.pos.x - before.x;
+        const movedY = this.pos.y - before.y;
+        const moved = Math.hypot(movedX, movedY);
+        if (moved > 0) this.dir = { x: movedX / moved, y: movedY / moved };
         this.speedModifier = 1; // Reset slow effect
     }
 
+    onHit(damage) {
+        if (this.invulnerable > 0 || !super.onHit(damage)) return false;
+        this.invulnerable = 0.7;
+        updateUI("Ouch! Took " + damage + " damage. Keep moving!");
+        return true;
+    }
+
+    drawSwing() {
+        if (!this.swing || this.swing.remaining <= 0) return;
+        const { angle, remaining, duration, range } = this.swing;
+        const progress = 1 - remaining / duration;
+        const origin = center(this);
+        const tip = angle - 1.2 + progress * 2.4;
+        c.save();
+        c.translate(origin.x, origin.y);
+        c.globalAlpha = Math.min(1, remaining / 0.08);
+        c.beginPath();
+        c.arc(0, 0, range, angle - 1.2, tip);
+        c.arc(0, 0, range - 14, tip, angle - 1.2, true);
+        c.closePath();
+        c.fillStyle = "rgba(160,225,255,0.45)";
+        c.fill();
+        c.beginPath();
+        c.arc(0, 0, range, Math.max(angle - 1.2, tip - 0.65), tip);
+        c.strokeStyle = "#e5faff";
+        c.lineWidth = 3;
+        c.stroke();
+        // The bright blade leads the fading crescent.
+        c.beginPath();
+        c.moveTo(Math.cos(tip) * 12, Math.sin(tip) * 12);
+        c.lineTo(Math.cos(tip) * range, Math.sin(tip) * range);
+        c.strokeStyle = "white";
+        c.lineWidth = 4;
+        c.stroke();
+        c.restore();
+    }
+
     draw() {
+        c.save();
+        if (this.invulnerable > 0 && Math.floor(this.invulnerable * 16) % 2 === 0) c.globalAlpha = 0.45;
         c.drawImage(penguinImg, this.pos.x, this.pos.y, this.width, this.height);
+        c.restore();
     }
 
     update(deltaTime) {
@@ -479,6 +840,10 @@ class Player extends Living {
             return;
         }
 
+        this.tickFeedback(deltaTime);
+        this.fireCooldown = Math.max(0, this.fireCooldown - deltaTime);
+        this.invulnerable = Math.max(0, this.invulnerable - deltaTime);
+        if (this.swing) this.swing.remaining = Math.max(0, this.swing.remaining - deltaTime);
         this.movement(deltaTime);
 
         if (keys.switch) {
@@ -501,9 +866,18 @@ class Player extends Living {
 /* ================= ENEMY (SLIME) ================= */
 
 class Enemy extends Living {
-    constructor(x, y) {
+    constructor(x, y, element = "goo") {
         super(x, y, 35, 30, "#00ff77");
-        this.dir = { x: Math.random() * 2 - 1, y: Math.random() * 2 - 1 };
+        this.element = SLIME_TYPES[element] ? element : "goo";
+        this.trailTimer = 1.5;
+        this.path = [];
+        this.repathTimer = 0;
+        this.attackTimer = 0;
+        this.windingUp = false;
+        this.strikeFlash = 0;
+        this.shotTimer = 2 + Math.random() * 2;
+        this.walkTime = Math.random() * Math.PI * 2;
+        this.moving = false;
         this.maxHealth = 100 * difficulty;
         this.health = this.maxHealth;
         this.speed = 1.5 + difficulty * 0.1;
@@ -513,65 +887,147 @@ class Enemy extends Living {
         if (!this.dead) {
             enemiesSlain++;
             difficulty += 0.05;
-            updateUI("Enemy Slain!");
+            if (this.element !== "goo") spawnHazard(dungeon.room, center(this), this.element);
+            updateUI(SLIME_TYPES[this.element].name + " slime defeated!");
         }
         super.destroy();
     }
 
     draw() {
+        c.save();
+        if (this.windingUp || this.strikeFlash > 0) {
+            const origin = center(this);
+            c.beginPath();
+            c.arc(origin.x, origin.y, 44, 0, Math.PI * 2);
+            c.strokeStyle = this.windingUp ? "#ffb347" : "#ff6655";
+            c.lineWidth = 2;
+            c.stroke();
+            c.fillStyle = "#ffb347";
+            c.font = "bold 20px monospace";
+            c.textAlign = "center";
+            c.fillText("!", origin.x, this.pos.y - 14);
+        }
+        c.translate(0, this.moving ? Math.sin(this.walkTime) * 1.5 : 0);
         const px = this.width / 8;
         const py = this.height / 6;
-        c.fillStyle = "#00ff77";
+        const palette = SLIME_TYPES[this.element];
+        c.fillStyle = palette.body;
         c.fillRect(this.pos.x + px * 2, this.pos.y, px * 4, py);
         c.fillRect(this.pos.x + px, this.pos.y + py, px * 6, py);
         c.fillRect(this.pos.x, this.pos.y + py * 2, px * 8, py);
         c.fillRect(this.pos.x, this.pos.y + py * 3, px * 8, py);
         c.fillRect(this.pos.x + px, this.pos.y + py * 4, px * 6, py);
-        c.fillStyle = "black";
+        c.fillStyle = palette.dark;
+        c.fillRect(this.pos.x + px, this.pos.y + py * 4, px * 6, py);
+        c.fillStyle = palette.light;
+        c.fillRect(this.pos.x + px * 2, this.pos.y + py, px * 2, py);
+        if (this.element === "fire") {
+            c.fillRect(this.pos.x + px * 3, this.pos.y - py, px, py * 2);
+            c.fillRect(this.pos.x + px * 5, this.pos.y - py * 0.5, px, py);
+        } else if (this.element === "water") {
+            c.fillRect(this.pos.x + px * 4, this.pos.y - py, px, py);
+            c.fillRect(this.pos.x + px * 3, this.pos.y, px * 3, py);
+        }
+        c.fillStyle = "#14212b";
         c.fillRect(this.pos.x + px * 2, this.pos.y + py * 2, px, py);
         c.fillRect(this.pos.x + px * 5, this.pos.y + py * 2, px, py);
+        c.restore();
     }
 
     update(deltaTime) {
-        const d = dist(this.pos, player.pos);
-        if (d < 200) {
-            this.dir.x = player.pos.x - this.pos.x;
-            this.dir.y = player.pos.y - this.pos.y;
-        } else if (Math.random() < 0.02) {
-            this.dir = { x: Math.random() * 2 - 1, y: Math.random() * 2 - 1 };
+        if (this.dead) return;
+        this.tickFeedback(deltaTime);
+        this.walkTime += deltaTime * 12;
+        this.attackTimer = Math.max(0, this.attackTimer - deltaTime);
+        this.strikeFlash = Math.max(0, this.strikeFlash - deltaTime);
+        this.shotTimer -= deltaTime;
+        this.trailTimer -= deltaTime;
+        this.repathTimer -= deltaTime;
+        this.moving = false;
+        const room = dungeon.room;
+        const origin = center(this), target = center(player);
+        const distance = dist(origin, target);
+        const canReach = distance <= 44 && room.hasLineOfSight(origin, target);
+        if (this.windingUp) {
+            if (this.attackTimer <= 0) {
+                this.strikeFlash = 0.15;
+                if (canReach) player.onHit(12);
+                this.windingUp = false;
+                this.attackTimer = 0.85;
+            }
+        } else if (canReach && this.attackTimer <= 0) {
+            this.windingUp = true;
+            this.attackTimer = 0.4;
+        } else {
+            const chasing = distance < 280;
+            if (!this.path.length || (chasing && this.repathTimer <= 0)) {
+                let destination = target;
+                if (!chasing) {
+                    const floors = room.tiles.filter(tile => tile.walkable);
+                    const tile = floors[Math.floor(Math.random() * floors.length)];
+                    if (tile) destination = { x: tile.x + tile.size / 2, y: tile.y + tile.size / 2 };
+                }
+                this.path = room.findPath(this, destination);
+                this.repathTimer = 0.65;
+            }
+            let budget = this.speed * 60 * deltaTime;
+            while (this.path.length && budget > 0) {
+                const waypoint = this.path[0], here = center(this);
+                const length = dist(here, waypoint);
+                if (length < 0.01) { this.path.shift(); continue; }
+                const step = Math.min(budget, length);
+                const before = { ...this.pos };
+                room.moveActor(this, (waypoint.x - here.x) / length * step, (waypoint.y - here.y) / length * step);
+                const moved = dist(before, this.pos);
+                this.moving ||= moved > 0.01;
+                if (moved < step - 0.01) { this.path = []; break; }
+                budget -= step;
+                if (step >= length) this.path.shift();
+            }
         }
-
-        if (Math.random() < 0.005) {
-            const shotDir = { x: player.pos.x - this.pos.x, y: player.pos.y - this.pos.y };
-            let mag = Math.hypot(shotDir.x, shotDir.y) || 1;
-            arrows.push(new GooShot(this.pos.x + 15, this.pos.y + 15, { x: shotDir.x / mag, y: shotDir.y / mag }));
+        // Goo remains a slowing hazard; timed shots replace per-frame random firing.
+        if (!this.windingUp && this.shotTimer <= 0 && distance < 280 && room.hasLineOfSight(origin, target)) {
+            const length = distance || 1;
+            arrows.push(new GooShot(origin.x, origin.y, { x: (target.x - origin.x) / length, y: (target.y - origin.y) / length }, this.element));
+            this.shotTimer = 2.5 + Math.random() * 1.5;
         }
-
-        let mag = Math.hypot(this.dir.x, this.dir.y) || 1;
-        let nx = this.pos.x + (this.dir.x / mag) * this.speed * deltaTime * 60;
-        let ny = this.pos.y + (this.dir.y / mag) * this.speed * deltaTime * 60;
-
-        if (dungeon.room.isWalkable(nx, ny, this.width, this.height)) {
-            this.pos.x = nx; this.pos.y = ny;
+        if (this.element !== "goo" && this.moving && this.trailTimer <= 0) {
+            spawnHazard(room, center(this), this.element);
+            this.trailTimer = 2.4;
         }
-
-        if (dist(this.pos, player.pos) < 30) player.onHit(20 * deltaTime);
-
         this.draw();
         this.drawHealth();
     }
 }
+
 /* ================= ENEMY PROJECTILE (GOO) ================= */
+function spawnHazard(room, point, element) {
+    // Impact positions can be inside walls: place patches on the closest walkable tile.
+    let tile = room.getTile(Math.floor(point.x / room.tileSize), Math.floor(point.y / room.tileSize));
+    if (!tile?.walkable) {
+        tile = room.tiles.filter(t => t.walkable).reduce((best, candidate) =>
+            !best || dist({ x: candidate.x + candidate.size / 2, y: candidate.y + candidate.size / 2 }, point) <
+            dist({ x: best.x + best.size / 2, y: best.y + best.size / 2 }, point) ? candidate : best, null);
+    }
+    if (!tile) return;
+    const existing = room.entities.find(entity => entity instanceof GooPuddle && !entity.dead &&
+        entity.element === element && entity.pos.x === tile.x + 2 && entity.pos.y === tile.y + 2);
+    if (existing) { existing.timer = 6; return; }
+    room.entities.push(new GooPuddle(tile.x + 2, tile.y + 2, element));
+}
+
 class GooShot extends Entity {
-    constructor(x, y, dir) {
-        super(x, y, 10, 10, "lime");
+    constructor(x, y, dir, element = "goo") {
+        super(x, y, 10, 10, SLIME_TYPES[element].light);
+        this.element = element;
         this.vel = { x: dir.x * 3, y: dir.y * 3 };
     }
     update(deltaTime) {
+        const before = { ...this.pos };
         this.pos.x += this.vel.x * deltaTime * 60;
         this.pos.y += this.vel.y * deltaTime * 60;
         if (!dungeon.room.isWalkable(this.pos.x, this.pos.y, this.width, this.height)) {
-            dungeon.room.entities.push(new GooPuddle(this.pos.x, this.pos.y));
+            spawnHazard(dungeon.room, before, this.element);
             this.destroy();
         }
         this.draw();
@@ -579,16 +1035,48 @@ class GooShot extends Entity {
 }
 
 class GooPuddle extends Entity {
-    constructor(x, y) {
-        super(x, y, 40, 40, "rgba(0,255,0,0.4)");
-        this.timer = 10;
+    constructor(x, y, element = "goo") {
+        super(x, y, 36, 36, SLIME_TYPES[element].body);
+        this.element = element;
+        this.timer = 6;
+    }
+    draw() {
+        const { x, y } = this.pos;
+        const palette = SLIME_TYPES[this.element];
+        c.save();
+        c.globalAlpha = Math.min(1, this.timer);
+        c.fillStyle = palette.dark;
+        c.fillRect(x + 4, y + 2, 28, 32);
+        c.fillRect(x + 1, y + 7, 34, 22);
+        c.fillStyle = palette.body;
+        c.fillRect(x + 5, y + 7, 26, 22);
+        c.fillStyle = palette.light;
+        if (this.element === "fire") {
+            for (let i = 0; i < 3; i++) {
+                const flicker = Math.floor((6 - this.timer) * 7 + i) % 3;
+                c.fillRect(x + 7 + i * 9, y + 12 - flicker * 3, 4, 14 + flicker * 3);
+                c.fillRect(x + 8 + i * 9, y + 8 - flicker * 3, 2, 6);
+            }
+        } else {
+            c.fillRect(x + 7, y + 10, 12, 2);
+            c.fillRect(x + 17, y + 22, 11, 2);
+            if (this.element === "water") {
+                c.fillRect(x + 9, y + 28, 8, 1);
+                c.fillRect(x + 25, y + 8, 2, 3);
+            }
+        }
+        c.restore();
     }
     update(deltaTime) {
         this.timer -= deltaTime;
-        if (this.timer <= 0) this.destroy();
+        if (this.timer <= 0) { this.destroy(); return; }
         if (player.pos.x < this.pos.x + this.width && player.pos.x + player.width > this.pos.x &&
             player.pos.y < this.pos.y + this.height && player.pos.y + player.height > this.pos.y) {
-            player.speedModifier = 0.5;
+            if (this.element === "fire") {
+                player.inFire = true;
+                if (player.fireCooldown <= 0 && player.onHit(8)) player.fireCooldown = 0.9;
+            } else if (this.element === "water") player.onWater = true;
+            else player.speedModifier = 0.5;
         }
         this.draw();
     }
@@ -617,10 +1105,23 @@ class Door {
     draw() {
         c.fillStyle = "#834333";
         c.fillRect(this.x, this.y, this.w, this.h);
-        if (player.pos.x + player.width > this.x - 5 && player.pos.y < this.y + this.h && player.pos.y + player.height > this.y) {
+    }
+    update() {
+        if (!isGameOver && player.health > 0 && player.pos.x + player.width > this.x - 5 && player.pos.y < this.y + this.h && player.pos.y + player.height > this.y) {
             dungeon.nextLevel();
-            updateUI("Entering new floor...");
+            arrows = [];
+            effects = [];
+            player.swing = null;
+            player.onWater = false;
+            player.inFire = false;
+            player.sliding = false;
+            player.slideTime = 0;
+            player.slideVelocity = { x: 0, y: 0 };
+            player.slowed = false;
+            player.speedModifier = 1;
+            player.fireCooldown = 0;
             player.health = player.maxHealth;
+            updateUI("Entering new floor...");
         }
     }
 }
@@ -635,10 +1136,17 @@ function initGame() {
     enemiesSlain = 0;
     goldCollected = 0;
     arrows = [];
+    effects = [];
+    difficulty = 1;
+    hasBow = false;
+    runTime = 0;
+    resetKeys();
+    lastTime = performance.now();
+    player = null;
     dungeon = new Dungeon();
     const start = dungeon.currentRoom.getSafePos();
     player = new Player(start.x, start.y);
-    updateUI("Labyrinth Resetted.");
+    updateUI("Explore, fight, or find the next floor.");
     updateLeaderboardUI();
 }
 
@@ -652,17 +1160,34 @@ function animate(time = performance.now()) {
     c.clearRect(0, 0, canvas.width, canvas.height);
 
     if (!isGameOver) {
+        runTime += deltaTime;
         dungeon.room.update(deltaTime);
         player.update(deltaTime);
         for (let i = arrows.length - 1; i >= 0; i--) {
             arrows[i].update(deltaTime);
             if (arrows[i].dead) arrows.splice(i, 1);
         }
+        if (player.health <= 0) {
+            isGameOver = true;
+            resetKeys();
+            onGameOver();
+        } else {
+            dungeon.room.doors.forEach(door => door.update());
+        }
     } else {
-        hasBow = false;
-        dungeon.room.update(deltaTime);
-        onGameOver();
+        dungeon.room.draw();
+        player.draw();
     }
+    player.drawSwing();
+    if (player.hitFlash > 0) {
+        c.save();
+        c.strokeStyle = "rgba(255,70,70," + (player.hitFlash / 0.18) + ")";
+        c.lineWidth = 8;
+        c.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+        c.restore();
+    }
+    drawEffects(isGameOver ? 0 : deltaTime);
+    updateStats();
     requestAnimationFrame(animate);
 }
 
@@ -674,42 +1199,63 @@ function onGameOver() {
 }
 
 async function submit() {
+    if (submitting) return;
+    submitting = true;
+    const button = document.getElementById("submit-btn");
+    const retryButton = document.getElementById("retry-btn");
+    button.disabled = true;
+    retryButton.disabled = true;
+    button.textContent = "SAVING…";
     const nameInput = document.getElementById("player-name");
-    const name = nameInput.value.trim() || "Unknown";
+    const name = nameInput.value.trim().slice(0, 10) || "Unknown";
+    const entry = { name, score: enemiesSlain, gold: goldCollected };
+    // Always keep a local backup. Offline records are never automatically uploaded later.
+    saveLocalScore(entry);
+    leaderboardRequest++; // Invalidate any older leaderboard load.
+    let message;
     try {
-        await fetch('https://jsgame-production.up.railway.app/api/submit-score', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: name, score: enemiesSlain, gold: goldCollected })
+        await apiRequest("submit-score", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: name, score: entry.score, gold: entry.gold })
         });
-        loadLeaderboardFromServer();
-    } catch (err) { console.error("Could not save score:", err); }
+        await loadLeaderboardFromServer();
+        message = storageAvailable ? "Score submitted online. A local backup is also saved." :
+            "Score submitted online. Backup available for this session only.";
+    } catch {
+        useLocalLeaderboard();
+        message = storageAvailable ? "Online leaderboard unavailable. Score saved in this browser." :
+            "Online saving and browser storage unavailable. Score kept for this session only.";
+    } finally {
+        submitting = false;
+        button.disabled = false;
+        retryButton.disabled = false;
+        button.textContent = "SUBMIT";
+    }
     document.getElementById("game-over-overlay").style.display = "none";
     nameInput.value = "";
     initGame();
+    updateUI(message);
 }
 
 async function retry() {
+    if (submitting) return;
     document.getElementById("game-over-overlay").style.display = "none";
-    loadLeaderboardFromServer();
     initGame();
+    loadLeaderboardFromServer();
 }
 
 async function loadLeaderboardFromServer() {
+    const request = ++leaderboardRequest;
     try {
-        const res = await fetch('https://jsgame-production.up.railway.app/api/leaderboard');
-        const data = await res.json();
-        const list = document.getElementById("leaderboard-list");
-        if (list) {
-            list.innerHTML = data.map((entry, i) => `
-                <li>
-                    <span>${i + 1}. ${entry.name}</span>
-                    <span style="color: slimegreen">${entry.score}</span>
-                    <span style="color: yellow">${entry.gold || 0}</span>
-                </li>
-            `).join("");
-        }
-    } catch (err) { console.log("Offline mode."); }
+        const data = await apiRequest("leaderboard");
+        if (!Array.isArray(data) || !data.every(validScore)) throw new Error("Invalid leaderboard response");
+        if (request !== leaderboardRequest) return;
+        leaderboardData = rankedScores(data);
+        leaderboardMode = "online";
+        updateLeaderboardUI();
+    } catch {
+        if (request === leaderboardRequest) useLocalLeaderboard();
+    }
 }
 
 // Event Listeners

@@ -2,6 +2,13 @@
 
 Applies to the whole repository. Preserve verified facts, workflows, decisions, and reproducible pitfalls here across sessions. Update this file and README when behavior changes. Proposed solutions below are not implemented fixes.
 
+## Collaboration and design records
+
+- Do not commit changes unless the owner explicitly asks. Approval of an idea or implementation does not authorize a commit. Leave edits uncommitted by default; publishing and merging also require authorization.
+- Read `docs/README.md` and `docs/decisions.md` before gameplay design work. Use `docs/ideas.md` for proposals and unresolved questions, and `docs/implementation-log.md` for completed work and actual verification.
+- Keep agreed direction, unapproved ideas, and implemented behavior distinct. Do not describe a design decision as shipped until the code and verification support it.
+- Preserve the existing character/enemy/item visual style, leaderboard concept, and the option to clear floors or rush through them. The detailed accepted direction is in `docs/decisions.md`.
+
 ## Accepted decisions (2026-10-28)
 
 - Product name: **DungeonCrawler**. Goal: portfolio project and practice in programming and AI-assisted development.
@@ -13,7 +20,7 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 
 ## Baseline (inspected 2026-10-28)
 
-- Static HTML/CSS/JavaScript frontend in `frontend/`; Express/MongoDB backend in `backend/`. No frontend framework or build step; dependencies and lockfile live only in the backend. No automated test suite.
+- Static HTML/CSS/JavaScript frontend in `frontend/`; Express/MongoDB backend in `backend/`. No frontend framework or build step; dependencies and lockfile live only in the backend. Headless frontend regression tests use Node's built-in test runner (`node --test tests/game.test.cjs`); there is no browser automation suite.
 - `frontend/index.html` loads only `game.js` as a classic script at the end of the body, after all required markup.
 - `frontend/game.js` owns the runtime. Section comments organize input, helpers/UI, tiles/rooms/dungeon, entities/items/living actors, weapons/projectiles, player/enemies/goo, chest/door, and engine/API code.
 - `frontend/styles.css` owns presentation. Sprites are `images/pengu.ico` and `images/chest.ico`; favicon is `images/favicon.ico`.
@@ -22,11 +29,11 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 
 ## Runtime relationships
 
-- Global `dungeon`, `player`, and `arrows` connect most classes. `initGame()` constructs the dungeon before assigning the new player. `Dungeon.nextLevel()` checks the existing player global when repositioning it; initialization order matters.
-- `animate()` uses one continuing `requestAnimationFrame` loop, caps delta time at 0.1 seconds, updates the room before the player, then updates projectiles in reverse. Retry reuses the loop; do not start another.
-- `Room.update()` draws tiles/doors, filters dead entities, updates entities, then spawns a chest if neither enemies nor a chest remain. `Door.draw()` can replace the room as a side effect.
+- Global `dungeon`, `player`, and `arrows` connect most classes. `initGame()` constructs the dungeon before assigning the new player. `Dungeon.nextLevel()` checks the existing player global when repositioning it; initialization order matters. `initGame()` clears the previous player before dungeon construction and resets keys, difficulty, bow state, run time, and frame timing.
+- `animate()` uses one continuing `requestAnimationFrame` loop, caps delta time at 0.1 seconds, updates the room before the player, then updates projectiles in reverse, and checks doors after simulation. Game-over frames only draw. Retry reuses the loop; do not start another.
+- `Room.update()` draws cached terrain/doors, filters dead entities, resets terrain flags, updates ground hazards before other entities, then spawns a chest if neither enemies nor a chest remain. `Door.draw()` only renders; `Door.update()` can change floors after simulation.
 - Room entities include enemies, items, chests, and goo puddles. Global `arrows` holds both player arrows and enemy goo shots. Death sets a flag before later removal.
-- Movement uses elapsed seconds multiplied by 60. Enemy wandering/shooting probabilities are per frame and remain frame-rate dependent.
+- Movement uses elapsed seconds multiplied by 60. Enemy routes are cardinal BFS paths through tile centers, replanned about every 0.65 seconds while pursuing. Wandering uses destinations rather than random frame directions; goo shooting uses elapsed-time cooldowns.
 - Each kill increases difficulty by 0.05 for newly constructed enemies. Floor changes preserve inventory, speed, score, and gold and restore health.
 - Required DOM IDs: `space`, `slain-count`, `hp-count`, `gold-count`, `inventory-list`, `log`, `leaderboard-list`, `game-over-overlay`, `final-score`, `player-name`, `submit-btn`, `retry-btn`. The game currently selects the first canvas rather than its ID.
 
@@ -38,7 +45,7 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 4. Serve the root with `py -m http.server 8000 --directory frontend` and open `http://localhost:8000`. Directly opening `frontend/index.html` also runs gameplay; HTTP provides a predictable origin.
 5. For gameplay changes, check startup/sprites, movement/walls, sword kills, bow pickup/switch/direction, health/speed, goo slow, chest reward once per floor, door healing, death overlay, and retry. Use controlled state/randomness when reproducing random-room defects.
 6. Inspect console/network errors. Mock API requests during submission tests; requests still target the old remote URL even though the backend is currently undeployed. Do not send dummy scores without explicit authorization.
-7. Report actual verification and limitations. No automated gameplay harness currently exists.
+7. Run `node --test tests/game.test.cjs` for movement, input, stats, reset, and transition regressions. Tests use a mocked DOM/canvas and offline API; they do not replace visual/browser playtesting. Report actual verification and limitations.
 
 ## Backend maintenance
 
@@ -50,28 +57,47 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 ## Backend contract
 
 - Hardcoded base URL: `https://jsgame-production.up.railway.app`.
-- GET `/api/leaderboard`: array with `name`, `score`, optional `gold`. Remote entries use server order; the separate placeholder renderer sorts its own array by score.
+- GET `/api/leaderboard`: array with `name`, `score`, optional `gold`. Responses are validated and displayed by score descending, then gold; the local board uses the same top-ten ranking.
 - POST `/api/submit-score`: JSON `{ username, score, gold }`, with `Content-Type: application/json`. Preserve the `username`/`name` distinction unless coordinating a contract change.
 - Names are trimmed; empty names become `Unknown`. HTML limits input to 10 characters; this is not server validation.
 - Remote availability and CORS configuration were not verified during this documentation update.
+
+## Implemented movement and stats (working tree, 2026-10-28)
+
+- `Room.moveActor()` sweeps X and Y separately to slide the player along walls, clamp to room bounds, and stop high-speed movement at the nearest wall. Diagonal speed stays normalized. Enemies also use this collision helper while following BFS waypoints.
+- Canvas is 1000 x 520, matching the 25 x 13 tiles. CSS scales the display with its aspect ratio intact. Side panels occupy real grid columns; on narrow windows they sit below the game.
+- Left stats panel shows floor, active simulation time, HP, living enemies remaining, selected weapon damage, movement speed in world pixels/second, and slow status. `updateStats()` refreshes values every frame without rebuilding inventory.
+- Keep `floor-count`, `run-time`, `health-stat`, `remaining-count`, `weapon-stat`, `damage-stat`, `speed-stat`, and `status-stat` DOM IDs aligned with JavaScript. Existing top HUD and inventory remain.
+- Input supports uppercase letters, ignores editable fields, prevents gameplay-key scrolling, and resets on blur/hidden/death/retry. New runs reset stats, and door transitions clear projectiles and heal before updating UI.
+
+## Combat and offline scores (working tree, 2026-10-28)
+
+- Sword: forward ~140-degree arc, 25 damage once at attack start, 0.24-second crescent animation, 0.4-second cooldown. Uses entity centers and line of sight; no sword damage through walls. Direction is locked for the visual swing. Bow damage remains 20; one arrow damages at most one enemy.
+- Living actors flash on hit and emit floating damage numbers. Player hits show a red border and 0.7-second invulnerability/blink. Effects and sword visuals clear on retry and floor changes.
+- Slimes show an amber 44px warning ring/! for 0.4 seconds, then strike for 12 if still in range and visible. Red strike ring lasts 0.15 seconds; attack recovery is 0.85 seconds. These are initial tuning values, not a finalized balance decision.
+- `Room.findPath()` uses BFS; align across corridors before following tile-center waypoints to avoid catching corners/replan backtracking. Slimes pursue within 280px, otherwise choose roaming destinations. No path planning through walls. Intentional wind-ups are stationary.
+- API calls have a three-second abort deadline including JSON reads, validate HTTP status/data, and safely render names with textContent. A request counter prevents stale loads overwriting the latest mode.
+- Local board: localStorage key `dungeoncrawler.scores.v1`, top ten by kills then gold. Save every submitted run locally before POST. Network failure shows the local board; blocked storage keeps session-only records with an honest label. Local records are not auto-uploaded. Origin/profile/site-data rules apply.
+- `submitting` prevents duplicate saves and retry races. Backend request contract remains unchanged. Tests inject offline responses and storage; no real API writes.
+
+## Elemental terrain and interface (working tree, 2026-10-28)
+
+- `Tile.draw(ctx)` renders deterministic stone/moss/torch detail. `Room.drawTerrain()` caches tiles in an offscreen canvas; `generateLabyrinth()` invalidates the cache. Invalidate `room.terrain` if changing tiles after generation.
+- HUD includes a native progress element `health-meter`, `floor-badge`, and `floor-objective`. Keep their IDs aligned with `updateStats()`. Low health changes the bar color. The sidebar includes a slime guide.
+- `Enemy(x,y,element='goo')` supports goo/Moss, fire/Ember, water/Tide via `SLIME_TYPES`. Each floor guarantees one of each plus one random type; total stays four. All keep current melee/pathfinding behavior and base stats. Art uses palette and crest differences.
+- `GooShot` and `GooPuddle` carry an element. Elemental enemies leave trails every 2.4 seconds while moving (first eligible after 1.5 seconds) and on death. All projectiles leave matching patches on wall impact.
+- `spawnHazard()` snaps to a walkable tile with 2px inset (36px patch); repeated same-element tile patches refresh to six seconds, not stack. Hazards draw/update before actors so sprites stay visible and flags affect movement that frame.
+- Fire: 8 damage per accepted pulse, 0.9-second player-wide burn cooldown, shares 0.7-second invulnerability. Expired patches cannot hurt. Items do not revive a player killed by a hazard earlier in the frame.
+- Water: seeds forward velocity at 1.35x current walking speed, maintains momentum with limited steering, blends back toward walking input for 0.45 seconds after leaving. Collision clears blocked velocity components; floor changes clear water/burn/slow state. These are initial tuning values.
+- `player.onWater/inFire` reset before hazard updates each frame. `sliding/slideVelocity/slideTime` persist for the short slide tail. Status and speed readings reflect the effect.
+- Isolated headless Edge browser checks now work via bundled Playwright when run outside the restricted process environment. Use a temporary browser profile, block real API traffic, and close browser/server afterwards. Desktop/tablet/mobile screenshots and fire/water integration were verified; no real API writes.
 
 ## Pitfalls and proposed solutions
 
 | Pitfall / cause | Solution when addressing it |
 | --- | --- |
-| `initGame()` does not reset difficulty, keys, or timing. `hasBow` resets in the game-over animation branch. | Centralize run-state resets before dungeon construction. Verify baseline difficulty, sword-only inventory, neutral input, and fresh timing on retry. |
-| Game-over frames still call `Room.update()`, so simulation and side effects continue behind the overlay. | Separate rendering from simulation or gate updates after death; preserve a single animation loop. |
-| `Room(25, 12, 40)` rounds rows to 13: a 1000 x 520 maze on a 1000 x 500 canvas. Collision checks walls but not explicit world bounds. | Match canvas/room geometry and enforce world bounds. Verify actor and projectile edges. |
-| Door at x=960 overlaps the boundary wall and triggers on proximity without enemy/chest gating. | Verify approachability after generation/collision edits. Implement explicit exit state and a walkable doorway if gating is requested. |
-| Floor changes leave projectiles alive and occur inside the old room's update. | Clear or deliberately transfer projectiles; defer transitions to an update boundary to avoid mixed-room effects. |
-| HP text refreshes only when `updateUI()` runs, not on every hit. Door healing happens after its UI update. | Refresh on health changes or synchronize HUD after simulation; check damage and floor healing. |
-| Neither fetch checks `res.ok`; HTTP failures do not throw automatically. Submission restarts even after network failure. | Check status/response shape, show errors, and preserve the finished run for retry if saving fails. |
-| Leaderboard names enter `innerHTML` in both renderers. | Build elements with `textContent` for untrusted values and validate API response types. |
-| `leaderboardData` remains placeholder data after GET. Restart can overwrite remote results temporarily. | Use one data source and renderer with explicit loading/error states. |
-| Keyboard listeners are global, case-sensitive, lack blur reset, and do not prevent arrow/Space scrolling. They also react while typing names. | Normalize keys, ignore editable fields, prevent defaults for active game controls, and clear input on blur/death/restart. |
+| Door at x=960 overlaps the boundary wall and triggers on proximity without enemy/chest gating. This preserves the agreed rushing option. | Verify approachability after generation/collision edits. Implement explicit exit state and a walkable doorway if gating is requested. |
 | `drawing.js` redeclares top-level `canvas` and uses undefined `start`, `end`, `theta`, and `brush`. | Keep it unloaded until its scope is isolated and unfinished example code is replaced. Parsing checks will not detect these runtime faults. |
-| A 600px wrapper surrounds a 1000px canvas; the fixed 220px sidebar plus padding can overlap gameplay. Wrapper CSS is duplicated. | Coordinate canvas display scale, wrapper width, and sidebar breakpoints. Preserve canvas coordinates and consolidate duplicate rules when changing layout. |
-| `slimegreen` is an invalid CSS color in leaderboard markup. | Replace in both renderers with a valid color, preferably through a CSS class. |
 | Pickups can overlap entities; full-health potions are consumed. `Bow.range` does not control arrow lifetime. | Treat these as current behavior. Change only within an explicit gameplay task and verify balance. |
 
 ## Maintaining this memory
