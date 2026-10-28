@@ -75,6 +75,32 @@ Record completed work and actual validation here. Design approval alone is not i
 
 **Limitations:** Longer-run balance and subjective slide feel still need player testing. Additional distinct room layouts, enemy leaps, floor-based difficulty, and upgrade progression remain open. Screenshots and the temporary visual-check script are outside the repository in the session visualization folder. No commits or deployments were made.
 
+## 2026-10-28 — Floor difficulty and directional bow
+
+**Status:** Implemented in the working tree; uncommitted. Related: D-004, D-011, I-005, I-015.
+
+- Replaced per-kill scaling with per-floor enemy health (+12 baseline HP/floor) and melee damage (+1/floor), plus gradually faster movement/shooting with caps. Floor one stays at 100 HP/12 damage; count remains four and warning remains 0.4 seconds. Added visible enemy health/damage stats.
+- Split WASD movement from arrow-key bow aiming. A collected bow auto-selects and fires on held arrows; perpendicular keys make normalized diagonal shots and opposite keys cancel. Space/Q remain supported. Updated control documentation.
+- Replaced the projectile rectangle with a rotated glowing arrowhead, shaft, fletching, and trail. Arrows enforce 300px range and use small swept steps for first-wall/first-target collision; damage/speed remain 20/420px per second.
+
+**Verification:** 44 Node regression tests pass, including scaling without kills, no per-kill increase, fresh runs, late-floor speed/shot caps, bow selection without walking, four diagonal quadrants, opposing keys/no-bow behavior, strafing/cooldown/release, wall collision at large steps, finite range, and drawing calls. Isolated headless Edge with real keyboard events verified diagonal aim (speed magnitude 7 nominal px/frame) without movement and floor-two health/HUD at 112%. Existing responsive/terrain checks also passed with no browser errors. Real API traffic was blocked.
+
+**Limitations:** Long-run balance still needs playtesting and expanded loot progression. Environmental fire damage is unchanged. Arrow keys intentionally no longer move the character. No commits, pushes, or deployments were made.
+
+## 2026-10-28 — Rune door, exit shop, and puzzle proposals
+
+**Status:** Implemented in the working tree; uncommitted. Related: D-012, I-016, I-017, I-018 (proposed only).
+
+- Replaced the brown door rectangle with a stone arch, wood/brass panels, glowing rune, threshold, and direction marker.
+- Door proximity opens a paused native-dialog shop. Players can buy, descend without spending, or return/Escape to the same floor. A doorway latch prevents immediate reopening; continuation advances once and restores upgraded max health.
+- Added Heartstone (+10 max HP,25), Honed Steel (+5 damage to both weapons and future bow pickups,50), and unique Storm Spark (one visible nearby target at half damage,150). Purchases persist between floors and reset on a new run. Chain hits cannot recursively trigger more sparks or pass through walls.
+- Separated spendable purse from total gold earned to preserve leaderboard/API meaning. Added upgraded max-health/perk/earned-gold readings and lightning feedback.
+- Recorded four optional treasure puzzle proposals and recommended Lantern order as a first prototype. No puzzle gameplay was implemented.
+
+**Verification:** 52 Node tests pass, including shop pause, affordability/stacking/unique purchase, invalid offer rejection, bow upgrade inheritance, nonrecursive/wall-blocked chaining, return/rearm, zero-gold skip, max-health refill, and restart resets. Isolated headless Edge exercised actual purchase buttons, descent, and Escape: all three purchases spent225, preserved225 earned, yielded110 HP/30 sword damage/Storm Spark, and carried upgrades to floor2. Shop at768px and390px had no horizontal overflow or browser errors. Desktop/phone screenshots were visually inspected; mobile shop scrolls vertically. Real API traffic was blocked.
+
+**Limitations:** Upgrade economy and chaining strength need run-length playtesting. Puzzle interactions/rooms/rewards remain proposals. No commits, pushes, or deployments were made.
+
 ## Entry format for future work
 
 Use a dated heading and include:

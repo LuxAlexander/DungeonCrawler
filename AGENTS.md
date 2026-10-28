@@ -30,11 +30,11 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 ## Runtime relationships
 
 - Global `dungeon`, `player`, and `arrows` connect most classes. `initGame()` constructs the dungeon before assigning the new player. `Dungeon.nextLevel()` checks the existing player global when repositioning it; initialization order matters. `initGame()` clears the previous player before dungeon construction and resets keys, difficulty, bow state, run time, and frame timing.
-- `animate()` uses one continuing `requestAnimationFrame` loop, caps delta time at 0.1 seconds, updates the room before the player, then updates projectiles in reverse, and checks doors after simulation. Game-over frames only draw. Retry reuses the loop; do not start another.
-- `Room.update()` draws cached terrain/doors, filters dead entities, resets terrain flags, updates ground hazards before other entities, then spawns a chest if neither enemies nor a chest remain. `Door.draw()` only renders; `Door.update()` can change floors after simulation.
+- `animate()` uses one continuing `requestAnimationFrame` loop, caps delta time at 0.1 seconds, updates the room before the player, then updates projectiles in reverse, and checks doors after simulation. Game-over and shop frames only draw. Retry reuses the loop; do not start another.
+- `Room.update()` draws cached terrain/doors, filters dead entities, resets terrain flags, updates ground hazards before other entities, then spawns a chest if neither enemies nor a chest remain. `Door.draw()` only renders; `Door.update()` opens the optional shop after simulation; `leaveFloor()` changes floors after the player chooses to descend.
 - Room entities include enemies, items, chests, and goo puddles. Global `arrows` holds both player arrows and enemy goo shots. Death sets a flag before later removal.
 - Movement uses elapsed seconds multiplied by 60. Enemy routes are cardinal BFS paths through tile centers, replanned about every 0.65 seconds while pursuing. Wandering uses destinations rather than random frame directions; goo shooting uses elapsed-time cooldowns.
-- Each kill increases difficulty by 0.05 for newly constructed enemies. Floor changes preserve inventory, speed, score, and gold and restore health.
+- `Dungeon.nextLevel()` sets difficulty to `1 + 0.12 * (floor - 1)` before enemy construction. Kills no longer scale difficulty. Floor changes preserve inventory, speed, score, and gold and restore health.
 - Required DOM IDs: `space`, `slain-count`, `hp-count`, `gold-count`, `inventory-list`, `log`, `leaderboard-list`, `game-over-overlay`, `final-score`, `player-name`, `submit-btn`, `retry-btn`. The game currently selects the first canvas rather than its ID.
 
 ## Workflow and validation
@@ -74,7 +74,7 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 
 - Sword: forward ~140-degree arc, 25 damage once at attack start, 0.24-second crescent animation, 0.4-second cooldown. Uses entity centers and line of sight; no sword damage through walls. Direction is locked for the visual swing. Bow damage remains 20; one arrow damages at most one enemy.
 - Living actors flash on hit and emit floating damage numbers. Player hits show a red border and 0.7-second invulnerability/blink. Effects and sword visuals clear on retry and floor changes.
-- Slimes show an amber 44px warning ring/! for 0.4 seconds, then strike for 12 if still in range and visible. Red strike ring lasts 0.15 seconds; attack recovery is 0.85 seconds. These are initial tuning values, not a finalized balance decision.
+- Slimes show an amber 44px warning ring/! for 0.4 seconds, then strike for `12 + floor - 1` if still in range and visible. Red strike ring lasts 0.15 seconds; attack recovery is 0.85 seconds. These are initial tuning values, not a finalized balance decision.
 - `Room.findPath()` uses BFS; align across corridors before following tile-center waypoints to avoid catching corners/replan backtracking. Slimes pursue within 280px, otherwise choose roaming destinations. No path planning through walls. Intentional wind-ups are stationary.
 - API calls have a three-second abort deadline including JSON reads, validate HTTP status/data, and safely render names with textContent. A request counter prevents stale loads overwriting the latest mode.
 - Local board: localStorage key `dungeoncrawler.scores.v1`, top ten by kills then gold. Save every submitted run locally before POST. Network failure shows the local board; blocked storage keeps session-only records with an honest label. Local records are not auto-uploaded. Origin/profile/site-data rules apply.
@@ -92,13 +92,31 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 - `player.onWater/inFire` reset before hazard updates each frame. `sliding/slideVelocity/slideTime` persist for the short slide tail. Status and speed readings reflect the effect.
 - Isolated headless Edge browser checks now work via bundled Playwright when run outside the restricted process environment. Use a temporary browser profile, block real API traffic, and close browser/server afterwards. Desktop/tablet/mobile screenshots and fire/water integration were verified; no real API writes.
 
+## Floor difficulty and directional bow (working tree, 2026-10-28)
+
+- Each floor adds 12% of baseline enemy HP and one melee damage. Enemy speed is `min(2.8, 1.6 + 0.06 * depth)` in nominal pixels/frame; multiply by 60 for px/s. Shot interval multiplier is `max(0.55, 1/(1 + depth*0.06))`. Four enemies and 0.4-second warning remain fixed; ground fire remains 8 damage. Depth is floor minus one.
+- New enemies derive depth from current difficulty, which nextLevel sets before constructing them (initial Dungeon is not yet assigned globally). Do not reintroduce per-kill scaling.
+- WASD moves; arrow keys set independent `aimLeft/Right/Up/Down` flags. Perpendicular arrows combine to normalized diagonal fire; opposites cancel. With a collected bow, aiming selects it automatically and fires on the shared 0.4-second cooldown. Arrows without a bow only show a pickup hint. Space remains an equipped-weapon attack; Q switches weapons.
+- Bow spawns centered, normalized 420px/s arrows with a 300px range, rotated arrowhead/shaft/fletching and teal trail. Swept 4px steps stop at the first wall or target, preventing lagged-frame hits through walls. Damage stays 20.
+- HUD IDs `enemy-health-scale` and `enemy-hit-stat` display floor strength. Update README and control guide if changing input again. Regression and headless real-keyboard browser checks cover diagonal aim without walking, strafing, scaling without kills, and restart resets.
+
+## Exit shop and run upgrades (working tree, 2026-10-28)
+
+- `Door` renders a stone arch, wood/brass leaves, rune, threshold, and DESCEND marker. Proximity opens `floor-shop` (native dialog), not a direct floor transition. The `armed` latch resets only after stepping away, so returning from the shop does not reopen it immediately.
+- `shopOpen` pauses simulation/projectiles/hazards/run time and blocks game input; `returnToFloor()`/ Escape resume the same floor. `leaveFloor()` advances once, clears floor effects/keys, and heals to current maximum. Purchases are optional, including with zero gold.
+- `SHOP_OFFERS`: vitality/Heartstone costs25 for +10 max HP; damage/Honed Steel costs50 for +5 sword/bow damage, stackable; storm/Storm Spark costs150 once per run. Future bow pickups add `player.damageBonus`. New Player resets all upgrades.
+- `goldCollected` remains lifetime gold earned in this run for leaderboard/API compatibility. `goldSpent` tracks purchases; wallet = earned minus spent. HUD/shop show wallet; sidebar/score submission show earned. Avoid subtracting spending from the submitted gold total.
+- Weapon hits use `strikeEnemy()`. Storm Spark calls direct `onHit` on one nearest visible target within90px at rounded half damage; this deliberately prevents recursive chaining. Lightning effects render through `drawEffects()` and freeze with the shop.
+- Additional DOM IDs: `max-hp-count`, `gold-earned-stat`, `perk-stat`, and shop controls. Native dialog gives modal focus behavior; Escape returns to the current floor. Tests mock showModal/close; isolated browser checks exercise actual buttons, dialog, and keyboard cancellation.
+- Read `docs/puzzles.md` for proposed optional puzzles. They are not implemented; never add mandatory exit gating as a side effect of puzzle work.
+
 ## Pitfalls and proposed solutions
 
 | Pitfall / cause | Solution when addressing it |
 | --- | --- |
-| Door at x=960 overlaps the boundary wall and triggers on proximity without enemy/chest gating. This preserves the agreed rushing option. | Verify approachability after generation/collision edits. Implement explicit exit state and a walkable doorway if gating is requested. |
+| Door at x=960 overlaps the boundary wall and opens the shop on proximity without enemy/chest gating. This preserves the agreed rushing option. | Verify approachability after generation/collision edits. Implement explicit exit state and a walkable doorway if gating is requested. |
 | `drawing.js` redeclares top-level `canvas` and uses undefined `start`, `end`, `theta`, and `brush`. | Keep it unloaded until its scope is isolated and unfinished example code is replaced. Parsing checks will not detect these runtime faults. |
-| Pickups can overlap entities; full-health potions are consumed. `Bow.range` does not control arrow lifetime. | Treat these as current behavior. Change only within an explicit gameplay task and verify balance. |
+| Pickups can overlap entities; full-health potions are consumed. Bow range is now enforced for player arrows. | Treat these as current behavior. Change only within an explicit gameplay task and verify balance. |
 
 ## Maintaining this memory
 

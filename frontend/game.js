@@ -15,6 +15,8 @@ canvas.height = 520;
 let isGameOver = false;
 let enemiesSlain = 0;
 let goldCollected = 0;
+let goldSpent = 0;
+let shopOpen = false;
 let hasBow = false;
 let difficulty = 1;
 let goldpickup = false;
@@ -31,7 +33,8 @@ let effects = [];
 
 const keys = {
     left: false, right: false, up: false, down: false,
-    attack: false, switch: false
+    attack: false, switch: false,
+    aimLeft: false, aimRight: false, aimUp: false, aimDown: false
 };
 
 function resetKeys() {
@@ -40,17 +43,21 @@ function resetKeys() {
 
 function handleKey(e, pressed) {
     const key = e.key.toLowerCase();
-    const controls = { a: "left", arrowleft: "left", d: "right", arrowright: "right",
-        w: "up", arrowup: "up", s: "down", arrowdown: "down", " ": "attack", q: "switch" };
+    const controls = { a: "left", d: "right", w: "up", s: "down",
+        arrowleft: "aimLeft", arrowright: "aimRight", arrowup: "aimUp", arrowdown: "aimDown",
+        " ": "attack", q: "switch" };
     const action = controls[key];
     if (!action) return;
     if (!pressed) {
         keys[action] = false;
         return;
     }
-    if (isGameOver || e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+    if (isGameOver || shopOpen || e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
     e.preventDefault();
     if (action !== "switch" || !e.repeat) keys[action] = true;
+    if (action.startsWith("aim") && !e.repeat && !player.inventory.weapons.some(weapon => weapon instanceof Bow)) {
+        updateUI("Find a bow to fire with the arrow keys.");
+    }
 }
 
 window.addEventListener("keydown", e => handleKey(e, true));
@@ -77,6 +84,24 @@ function drawEffects(deltaTime) {
         effect.life -= deltaTime;
         c.save();
         c.globalAlpha = Math.max(0, effect.life / effect.duration);
+        if (effect.type === "lightning") {
+            c.strokeStyle = "#b3fcff";
+            c.shadowColor = "#6cdde8";
+            c.shadowBlur = 12;
+            c.lineWidth = 3;
+            c.beginPath();
+            c.moveTo(effect.from.x, effect.from.y);
+            const dx = effect.to.x - effect.from.x, dy = effect.to.y - effect.from.y;
+            const length = Math.hypot(dx, dy) || 1;
+            for (let i = 1; i <= 6; i++) {
+                const offset = i === 6 ? 0 : (i % 2 ? 6 : -6);
+                c.lineTo(effect.from.x + dx * i / 6 - dy / length * offset,
+                    effect.from.y + dy * i / 6 + dx / length * offset);
+            }
+            c.stroke();
+            c.restore();
+            return;
+        }
         c.font = "bold 16px monospace";
         c.textAlign = "center";
         c.fillStyle = effect.color;
@@ -94,7 +119,7 @@ function updateUI(logMsg = null) {
 
     if (slainElem) slainElem.innerText = enemiesSlain;
     if (hpElem) hpElem.innerText = Math.ceil(player ? player.health : 0);
-    if (goldElem) goldElem.innerText = goldCollected;
+    if (goldElem) goldElem.innerText = goldCollected - goldSpent;
 
     if (logMsg) {
         const log = document.getElementById("log");
@@ -121,6 +146,11 @@ function updateStats() {
     const seconds = Math.floor(runTime % 60).toString().padStart(2, "0");
     const stats = {
         "floor-count": dungeon.floor,
+        "gold-earned-stat": goldCollected,
+        "max-hp-count": player.maxHealth,
+        "perk-stat": player.stormSpark ? "Storm Spark" : "None",
+        "enemy-health-scale": Math.round(difficulty * 100) + "%",
+        "enemy-hit-stat": 12 + dungeon.floor - 1,
         "floor-badge": "DEPTH " + String(dungeon.floor).padStart(2, "0"),
         "run-time": minutes + ":" + seconds,
         "health-stat": Math.ceil(player.health) + " / " + player.maxHealth,
@@ -502,6 +532,7 @@ class Dungeon {
 
     nextLevel() {
         this.floor++;
+        difficulty = 1 + (this.floor - 1) * 0.12;
         const newRoom = new Room(25, 12, 40);
         newRoom.doors.push(new Door(960, 200));
 
@@ -622,7 +653,9 @@ class Item extends Entity {
             } else if (this.type === "bow") {
                 hasBow = player.inventory.weapons.some(w => w instanceof Bow);
                 if (!hasBow) {
-                    player.inventory.weapons.push(new Bow());
+                    const bow = new Bow();
+                    bow.damage += player.damageBonus;
+                    player.inventory.weapons.push(bow);
                     updateUI("Picked up a Bow!");
                     hasBow = true;
                 }
@@ -678,6 +711,18 @@ class Living extends Entity {
 
 /* ================= WEAPONS & PROJECTILES ================= */
 
+function strikeEnemy(enemy, damage) {
+    if (!enemy.onHit(damage) || !player.stormSpark) return;
+    const origin = center(enemy);
+    const nearby = dungeon.room.entities.filter(target => target instanceof Enemy && target !== enemy && !target.dead &&
+        dist(origin, center(target)) <= 90 && dungeon.room.hasLineOfSight(origin, center(target)))
+        .sort((a, b) => dist(origin, center(a)) - dist(origin, center(b)))[0];
+    if (!nearby) return;
+    effects.push({ type: "lightning", from: origin, to: center(nearby), life: 0.22, duration: 0.22 });
+    // Direct onHit prevents chained hits from recursively producing more lightning.
+    nearby.onHit(Math.round(damage * 0.5));
+}
+
 class Sword {
     constructor() { this.name = "Sword"; this.damage = 25; this.range = 50; }
     attack(owner, room) {
@@ -691,7 +736,7 @@ class Sword {
             const difference = Math.atan2(Math.sin(offset), Math.cos(offset));
             if (dist(origin, target) <= this.range + enemy.width / 2 && Math.abs(difference) <= 1.2 &&
                 room.hasLineOfSight(origin, target)) {
-                enemy.onHit(this.damage);
+                strikeEnemy(enemy, this.damage);
             }
         });
     }
@@ -699,33 +744,62 @@ class Sword {
 
 class Bow {
     constructor() { this.name = "Bow"; this.damage = 20; this.range = 300; }
-    attack(owner, room) {
-        arrows.push(new Arrow(owner.pos.x + 15, owner.pos.y + 15, owner.dir));
+    attack(owner, room, direction = owner.dir) {
+        const origin = center(owner);
+        arrows.push(new Arrow(origin.x, origin.y, direction, this.damage, this.range));
     }
 }
 
 class Arrow extends Entity {
-    constructor(x, y, dir) {
-        super(x, y, 8, 4, "white");
-        this.vel = { x: dir.x * 7, y: dir.y * 7 };
-        this.damage = 20;
+    constructor(x, y, dir, damage = 20, range = 300) {
+        super(x, y, 8, 4, "#d8ffff");
+        const length = Math.hypot(dir.x, dir.y);
+        const direction = length ? { x: dir.x / length, y: dir.y / length } : { x: 1, y: 0 };
+        this.vel = { x: direction.x * 7, y: direction.y * 7 };
+        this.angle = Math.atan2(direction.y, direction.x);
+        this.damage = damage;
+        this.remainingRange = range;
+    }
+    draw() {
+        c.save();
+        c.translate(this.pos.x, this.pos.y);
+        c.rotate(this.angle);
+        c.shadowColor = "#75e8e1";
+        c.shadowBlur = 10;
+        c.strokeStyle = "rgba(111,230,219,0.28)";
+        c.lineWidth = 5;
+        c.beginPath();c.moveTo(-24, 0);c.lineTo(0, 0);c.stroke();
+        c.shadowBlur = 0;
+        c.strokeStyle = "#d5ba81";
+        c.lineWidth = 2;
+        c.beginPath();c.moveTo(-11, 0);c.lineTo(4, 0);c.stroke();
+        c.fillStyle = "#eafff4";
+        c.beginPath();c.moveTo(10, 0);c.lineTo(2, -4);c.lineTo(2, 4);c.closePath();c.fill();
+        c.strokeStyle = "#86d6c9";
+        c.beginPath();c.moveTo(-6, 0);c.lineTo(-12, -4);c.moveTo(-6, 0);c.lineTo(-12, 4);c.stroke();
+        c.restore();
     }
     update(deltaTime) {
-        this.pos.x += this.vel.x * deltaTime * 60;
-        this.pos.y += this.vel.y * deltaTime * 60;
-
-        dungeon.room.entities.forEach(e => {
-            if (e instanceof Enemy && !e.dead && !this.dead && dist(this.pos, e.pos) < 25) {
-                e.onHit(this.damage);
+        if (this.dead) return;
+        const distance = Math.min(Math.hypot(this.vel.x, this.vel.y) * deltaTime * 60, this.remainingRange);
+        const steps = Math.max(1, Math.ceil(distance / 4));
+        const speed = Math.hypot(this.vel.x, this.vel.y) || 1;
+        // Small swept steps hit the first wall/target, even during a lagged frame.
+        for (let step = 0; step < steps; step++) {
+            this.pos.x += this.vel.x / speed * distance / steps;
+            this.pos.y += this.vel.y / speed * distance / steps;
+            if (!dungeon.room.isWalkable(this.pos.x - 2, this.pos.y - 2, 4, 4)) {
                 this.destroy();
+                break;
             }
-        });
-
-        if (!dungeon.room.isWalkable(this.pos.x, this.pos.y, this.width, this.height)) {
-            this.destroy();
+            const target = dungeon.room.entities.find(enemy => enemy instanceof Enemy && !enemy.dead &&
+                this.pos.x + 2 >= enemy.pos.x && this.pos.x - 2 <= enemy.pos.x + enemy.width &&
+                this.pos.y + 2 >= enemy.pos.y && this.pos.y - 2 <= enemy.pos.y + enemy.height);
+            if (target) { strikeEnemy(target, this.damage); this.destroy(); break; }
         }
-
-        this.draw();
+        this.remainingRange -= distance;
+        if (this.remainingRange <= 0) this.destroy();
+        if (!this.dead) this.draw();
     }
 }
 
@@ -735,6 +809,8 @@ class Player extends Living {
     constructor(x, y) {
         super(x, y, 25, 20, "deepskyblue");
         this.inventory = { weapons: [new Sword()], index: 0 };
+        this.damageBonus = 0;
+        this.stormSpark = false;
         this.dir = { x: 1, y: 0 };
         this.speedModifier = 1;
         this.speed = 4;
@@ -852,12 +928,23 @@ class Player extends Living {
             updateUI("Switched to " + this.weapon.name);
         }
 
-        if (keys.attack && this.cooldown <= 0) {
+        this.cooldown = Math.max(0, this.cooldown - deltaTime);
+        const aim = { x: (keys.aimRight ? 1 : 0) - (keys.aimLeft ? 1 : 0),
+            y: (keys.aimDown ? 1 : 0) - (keys.aimUp ? 1 : 0) };
+        const aiming = aim.x !== 0 || aim.y !== 0;
+        const bowIndex = this.inventory.weapons.findIndex(weapon => weapon instanceof Bow);
+        if (aiming && bowIndex >= 0) {
+            if (this.inventory.index !== bowIndex) {
+                this.inventory.index = bowIndex;
+                updateUI("Bow ready. WASD to move, arrow keys to aim and fire.");
+            }
+            const length = Math.hypot(aim.x, aim.y);
+            this.dir = { x: aim.x / length, y: aim.y / length };
+        }
+        if (this.cooldown <= 0 && (keys.attack || (aiming && bowIndex >= 0))) {
             this.weapon.attack(this, dungeon.room);
             this.cooldown = 0.4;
         }
-
-        if (this.cooldown > 0) this.cooldown -= deltaTime;
 
         super.update(deltaTime);
     }
@@ -878,15 +965,18 @@ class Enemy extends Living {
         this.shotTimer = 2 + Math.random() * 2;
         this.walkTime = Math.random() * Math.PI * 2;
         this.moving = false;
-        this.maxHealth = 100 * difficulty;
+        const depth = Math.round((difficulty - 1) / 0.12);
+        this.meleeDamage = 12 + depth;
+        this.shotRate = Math.max(0.55, 1 / (1 + depth * 0.06));
+        this.shotTimer *= this.shotRate;
+        this.maxHealth = Math.round(100 * difficulty);
         this.health = this.maxHealth;
-        this.speed = 1.5 + difficulty * 0.1;
+        this.speed = Math.min(2.8, 1.6 + depth * 0.06);
     }
 
     destroy() {
         if (!this.dead) {
             enemiesSlain++;
-            difficulty += 0.05;
             if (this.element !== "goo") spawnHazard(dungeon.room, center(this), this.element);
             updateUI(SLIME_TYPES[this.element].name + " slime defeated!");
         }
@@ -951,7 +1041,7 @@ class Enemy extends Living {
         if (this.windingUp) {
             if (this.attackTimer <= 0) {
                 this.strikeFlash = 0.15;
-                if (canReach) player.onHit(12);
+                if (canReach) player.onHit(this.meleeDamage);
                 this.windingUp = false;
                 this.attackTimer = 0.85;
             }
@@ -989,7 +1079,7 @@ class Enemy extends Living {
         if (!this.windingUp && this.shotTimer <= 0 && distance < 280 && room.hasLineOfSight(origin, target)) {
             const length = distance || 1;
             arrows.push(new GooShot(origin.x, origin.y, { x: (target.x - origin.x) / length, y: (target.y - origin.y) / length }, this.element));
-            this.shotTimer = 2.5 + Math.random() * 1.5;
+            this.shotTimer = (2.5 + Math.random() * 1.5) * this.shotRate;
         }
         if (this.element !== "goo" && this.moving && this.trailTimer <= 0) {
             spawnHazard(room, center(this), this.element);
@@ -1101,29 +1191,134 @@ class Chest extends Entity {
 /* ================= DOOR ================= */
 
 class Door {
-    constructor(x, y) { this.x = x; this.y = y; this.w = 40; this.h = 80; }
+    constructor(x, y) { this.x = x; this.y = y; this.w = 40; this.h = 80; this.armed = true; }
     draw() {
-        c.fillStyle = "#834333";
-        c.fillRect(this.x, this.y, this.w, this.h);
+        const { x, y, w, h } = this;
+        c.save();
+        c.fillStyle = "#101b21";
+        c.fillRect(x - 4, y - 5, w + 4, h + 9);
+        c.fillStyle = "#637475";
+        c.fillRect(x, y + 7, 6, h - 7);
+        c.fillRect(x + w - 6, y + 7, 6, h - 7);
+        c.fillRect(x + 5, y, w - 10, 8);
+        c.fillRect(x + 10, y - 5, w - 20, 6);
+        c.fillStyle = "#9b9c80";
+        c.fillRect(x + 7, y, w - 14, 2);
+        for (let row = 0; row < 4; row++) {
+            c.fillStyle = "#35494c";
+            c.fillRect(x, y + 20 + row * 17, 6, 2);
+            c.fillRect(x + w - 6, y + 20 + row * 17, 6, 2);
+        }
+        c.fillStyle = "#2c2521";
+        c.fillRect(x + 6, y + 9, w - 12, h - 10);
+        for (let col = 0; col < 4; col++) {
+            c.fillStyle = col % 2 ? "#71503b" : "#825d40";
+            c.fillRect(x + 7 + col * 7, y + 9, 6, h - 12);
+        }
+        c.fillStyle = "#bc9758";
+        c.fillRect(x + 6, y + 23, w - 12, 3);
+        c.fillRect(x + 6, y + 58, w - 12, 3);
+        c.fillStyle = "#182b2d";
+        c.fillRect(x + 18, y + 31, 11, 16);
+        c.strokeStyle = "#91e0ba";
+        c.shadowColor = "#8fdfad";
+        c.shadowBlur = 10;
+        c.lineWidth = 2;
+        c.beginPath();c.moveTo(x + 23, y + 34);c.lineTo(x + 27, y + 39);
+        c.lineTo(x + 23, y + 44);c.lineTo(x + 19, y + 39);c.closePath();c.stroke();
+        c.fillStyle = "#a9d7b2";
+        c.fillRect(x + 2, y + h, w - 4, 3);
+        c.shadowBlur = 0;
+        c.font = "bold 8px monospace";
+        c.textAlign = "center";
+        c.fillStyle = "#dbd3a4";
+        c.fillText("DESCEND", x + w / 2, y - 10);
+        c.strokeStyle = "#b5c79a";
+        c.beginPath();c.moveTo(x - 15, y + 35);c.lineTo(x - 10, y + 40);c.lineTo(x - 15, y + 45);c.stroke();
+        c.restore();
     }
     update() {
-        if (!isGameOver && player.health > 0 && player.pos.x + player.width > this.x - 5 && player.pos.y < this.y + this.h && player.pos.y + player.height > this.y) {
-            dungeon.nextLevel();
-            arrows = [];
-            effects = [];
-            player.swing = null;
-            player.onWater = false;
-            player.inFire = false;
-            player.sliding = false;
-            player.slideTime = 0;
-            player.slideVelocity = { x: 0, y: 0 };
-            player.slowed = false;
-            player.speedModifier = 1;
-            player.fireCooldown = 0;
-            player.health = player.maxHealth;
-            updateUI("Entering new floor...");
+        const near = player.pos.x + player.width > this.x - 5 && player.pos.y < this.y + this.h && player.pos.y + player.height > this.y;
+        if (!near) this.armed = true;
+        if (!isGameOver && !shopOpen && player.health > 0 && near && this.armed) {
+            this.armed = false;
+            openFloorShop();
         }
     }
+}
+
+/* ================= FLOOR SHOP ================= */
+const SHOP_OFFERS = {
+    vitality: { cost: 25, name: "Heartstone" },
+    damage: { cost: 50, name: "Honed Steel" },
+    storm: { cost: 150, name: "Storm Spark" }
+};
+
+function updateShop() {
+    document.getElementById("shop-gold").textContent = goldCollected - goldSpent;
+    document.getElementById("shop-floor").textContent = "FLOOR " + dungeon.floor + " → " + (dungeon.floor + 1);
+    for (const [id, offer] of Object.entries(SHOP_OFFERS)) {
+        const button = document.getElementById("buy-" + id);
+        const owned = id === "storm" && player.stormSpark;
+        button.disabled = owned || goldCollected - goldSpent < offer.cost;
+        button.textContent = owned ? "OWNED" : "BUY · " + offer.cost + " GOLD";
+    }
+}
+
+function openFloorShop() {
+    if (shopOpen || isGameOver || player.health <= 0) return;
+    shopOpen = true;
+    resetKeys();
+    updateShop();
+    document.getElementById("shop-message").textContent = "Run upgrades last until defeat. Health refills when you descend.";
+    document.getElementById("floor-shop").showModal();
+}
+
+function buyUpgrade(id) {
+    const offer = Object.hasOwn(SHOP_OFFERS, id) ? SHOP_OFFERS[id] : null;
+    if (!shopOpen || !offer || goldCollected - goldSpent < offer.cost || (id === "storm" && player.stormSpark)) return false;
+    goldSpent += offer.cost;
+    if (id === "vitality") player.maxHealth += 10;
+    if (id === "damage") {
+        player.damageBonus += 5;
+        player.inventory.weapons.forEach(weapon => weapon.damage += 5);
+    }
+    if (id === "storm") player.stormSpark = true;
+    document.getElementById("shop-message").textContent = offer.name + " acquired! " +
+        (id === "vitality" ? "Maximum health: " + player.maxHealth : id === "damage" ? "All weapon damage increased by 5." : "Your weapon hits now spark to a nearby slime.");
+    updateShop();
+    updateUI();
+    return true;
+}
+
+function returnToFloor() {
+    if (!shopOpen) return;
+    shopOpen = false;
+    document.getElementById("floor-shop").close();
+    resetKeys();
+    // The used door stays disarmed until you step away, avoiding an immediate reopen.
+    updateUI("Back to the floor. Step away from the door before returning.");
+}
+
+function leaveFloor() {
+    if (!shopOpen) return;
+    shopOpen = false;
+    document.getElementById("floor-shop").close();
+    resetKeys();
+    dungeon.nextLevel();
+    arrows = [];
+    effects = [];
+    player.swing = null;
+    player.onWater = false;
+    player.inFire = false;
+    player.sliding = false;
+    player.slideTime = 0;
+    player.slideVelocity = { x: 0, y: 0 };
+    player.slowed = false;
+    player.speedModifier = 1;
+    player.fireCooldown = 0;
+    player.health = player.maxHealth;
+    updateUI("Entering floor " + dungeon.floor + ". Slimes are stronger here.");
 }
 
 /* ================= GAME ENGINE ================= */
@@ -1135,6 +1330,10 @@ function initGame() {
     isGameOver = false;
     enemiesSlain = 0;
     goldCollected = 0;
+    goldSpent = 0;
+    shopOpen = false;
+    const shop = document.getElementById("floor-shop");
+    if (shop.open) shop.close();
     arrows = [];
     effects = [];
     difficulty = 1;
@@ -1159,7 +1358,7 @@ function animate(time = performance.now()) {
 
     c.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (!isGameOver) {
+    if (!isGameOver && !shopOpen) {
         runTime += deltaTime;
         dungeon.room.update(deltaTime);
         player.update(deltaTime);
@@ -1186,7 +1385,7 @@ function animate(time = performance.now()) {
         c.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
         c.restore();
     }
-    drawEffects(isGameOver ? 0 : deltaTime);
+    drawEffects(isGameOver || shopOpen ? 0 : deltaTime);
     updateStats();
     requestAnimationFrame(animate);
 }
@@ -1263,6 +1462,11 @@ const subBtn = document.getElementById("submit-btn");
 const retBtn = document.getElementById("retry-btn");
 if (subBtn) subBtn.addEventListener("click", submit);
 if (retBtn) retBtn.addEventListener("click", retry);
+
+for (const id of Object.keys(SHOP_OFFERS)) document.getElementById("buy-" + id).addEventListener("click", () => buyUpgrade(id));
+document.getElementById("shop-continue").addEventListener("click", leaveFloor);
+document.getElementById("shop-return").addEventListener("click", returnToFloor);
+document.getElementById("floor-shop").addEventListener("cancel", event => { event.preventDefault(); returnToFloor(); });
 
 // Start Game
 initGame();

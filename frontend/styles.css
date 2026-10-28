@@ -200,3 +200,34 @@ canvas { border-color: #405557; box-shadow: 0 20px 40px #0006; }
     .hud-counter strong { font-size: 20px; }
     .health-caption { letter-spacing: 0; font-size: 9px; }
 }
+
+#floor-shop {
+    color: #dfe8dc; background: radial-gradient(ellipse at top left, #30473f77, transparent 65%), #122127;
+    border: 1px solid #718277; border-top: 4px solid #bba16a; padding: 26px;
+    width: min(880px, calc(100% - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto;
+    box-shadow: 0 24px 90px #000b; font-family: inherit;
+}
+#floor-shop::backdrop { background: #050c12cf; backdrop-filter: blur(3px); }
+.shop-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+#shop-title { margin: 20px 0 10px; color: #e5e6c9; font-size: clamp(24px, 4vw, 36px); line-height: 1.15; letter-spacing: -1px; }
+.shop-intro { font-size: 13px; color: #acbcb0; line-height: 1.5; }
+.shop-purse { display: flex; justify-content: space-between; gap: 12px; border-block: 1px solid #41534b; padding: 14px 0; margin: 20px 0; font-size: 12px; letter-spacing: 1px; }
+.shop-purse strong { color: #ebc779; }
+.shop-offers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.shop-offer { display: flex; flex-direction: column; padding: 18px 14px; background: #0a191d99; border: 1px solid #425750; }
+.offer-tier { font-size: 10px; color: #d7bc85; letter-spacing: 1px; }
+.shop-offer h3 { color: #dfebce; font-size: 18px; margin: 14px 0 10px; }
+.shop-offer p { font-size: 12px; line-height: 1.7; margin: 0 0 18px; color: #b6c7bc; }
+.offer-tag { display: block; margin-top: auto; padding-bottom: 15px; font-size: 9px; letter-spacing: 1px; color: #93aa97; }
+.shop-offer button { font-size: 11px; background: #263b31; color: #dfedc6; border-color: #6d8a68; }
+.shop-offer button:hover:enabled { background: #3c5743; }
+.shop-offer button:disabled { cursor: default; }
+.storm-offer { border-color: #577d84; background: #16303b66; }
+.storm-offer h3 { color: #a2e4e8; }
+.storm-offer button { background: #22414b; border-color: #6ba5aa; }
+#shop-message { min-height: 2.8em; font-size: 12px; line-height: 1.6; color: #d4c795; margin: 18px 0; }
+.shop-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.shop-actions button { font-size: 12px; border-color: #61776b; background: #1c302c; }
+#shop-continue { background: #d6c18b; color: #14211d; border-color: #e8d7ab; font-weight: bold; }
+.shop-footnote { font-size: 10px; line-height: 1.6; color: #96aaa1; margin: 18px 0 0; }
+@media (max-width: 600px) { #floor-shop { padding: 18px; } .shop-offers { grid-template-columns: minmax(0, 1fr); } .shop-offer { padding: 15px; } .shop-offer p { margin-bottom: 12px; } .shop-heading .eyebrow { display: inline; } }

@@ -20,6 +20,8 @@
                 <div><dt>Time</dt><dd id="run-time">0:00</dd></div>
                 <div><dt>Health</dt><dd id="health-stat">100 / 100</dd></div>
                 <div><dt>Enemies left</dt><dd id="remaining-count">4</dd></div>
+                <div><dt>Enemy health</dt><dd id="enemy-health-scale">100%</dd></div>
+                <div><dt>Enemy hit</dt><dd id="enemy-hit-stat">12</dd></div>
             </dl>
             <h3>YOUR BUILD</h3>
             <dl class="stat-list">
@@ -27,6 +29,8 @@
                 <div><dt>Damage / hit</dt><dd id="damage-stat">25</dd></div>
                 <div><dt>Move speed</dt><dd id="speed-stat">240 px/s</dd></div>
                 <div><dt>Condition</dt><dd id="status-stat">Normal</dd></div>
+                <div><dt>Run perk</dt><dd id="perk-stat">None</dd></div>
+                <div><dt>Gold earned</dt><dd id="gold-earned-stat">0</dd></div>
             </dl>
             <p class="panel-note">Clear the floor for treasure, or find the door and press onward.</p>
             <h3>KNOW YOUR SLIMES</h3>
@@ -36,7 +40,7 @@
                 <li><span class="slime-dot water-dot" aria-hidden="true"></span><span><strong>Tide</strong><small>Water carries you forward</small></span></li>
             </ul>
             <h3>CONTROLS</h3>
-            <p class="panel-note">WASD / arrows: move<br>Space: attack<br>Q: switch weapon</p>
+            <p class="panel-note">WASD: move<br>Arrows: aim &amp; fire bow<br>Two arrows: diagonal shot<br>Space: attack<br>Q: switch weapon</p>
         </aside>
 
         <div id="game-wrapper">
@@ -54,11 +58,11 @@
                 </div>
                 <div class="hud-readings">
                     <div class="health-card">
-                        <div class="health-caption"><span>VITALITY</span><strong><span id="hp-count">100</span> / 100</strong></div>
+                        <div class="health-caption"><span>VITALITY</span><strong><span id="hp-count">100</span> / <span id="max-hp-count">100</span></strong></div>
                         <progress id="health-meter" class="health-meter" max="100" value="100" aria-label="Health"></progress>
                     </div>
                     <div class="hud-counter"><span>SLIMES SLAIN</span><strong id="slain-count">0</strong></div>
-                    <div class="hud-counter gold-counter"><span>GOLD FOUND</span><strong id="gold-count">0</strong></div>
+                    <div class="hud-counter gold-counter"><span>PURSE</span><strong id="gold-count">0</strong></div>
                 </div>
                 <div class="hud-footer">
                     <div class="inventory-box"><span class="inventory-label">EQUIPPED</span><span id="inventory-list"><span class="inv-item active-weapon">Sword</span></span><kbd>Q</kbd></div>
@@ -80,6 +84,20 @@
 
     </div>
 
+    <dialog id="floor-shop" aria-labelledby="shop-title" aria-describedby="shop-message">
+        <div class="shop-heading"><span class="eyebrow">THE WAYFARER'S REST</span><span id="shop-floor" class="depth-badge">FLOOR 1 → 2</span></div>
+        <h2 id="shop-title">A little stronger.<br>A little deeper.</h2>
+        <p class="shop-intro">Trade your treasure for another chance down below.</p>
+        <p class="shop-purse">YOUR PURSE <strong><span id="shop-gold">0</span> GOLD</strong></p>
+        <div class="shop-offers">
+            <article class="shop-offer"><span class="offer-tier">SMALL · 25 GOLD</span><h3>Heartstone</h3><p>+10 maximum health.<br>Carry a little more courage.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-vitality">BUY · 25 GOLD</button></article>
+            <article class="shop-offer"><span class="offer-tier">MEDIUM · 50 GOLD</span><h3>Honed Steel</h3><p>+5 damage to sword and bow.<br>Even a bow found later benefits.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-damage">BUY · 50 GOLD</button></article>
+            <article class="shop-offer storm-offer"><span class="offer-tier">SPECIAL · 150 GOLD</span><h3>Storm Spark</h3><p>Weapon hits arc to one nearby slime for 50% damage. Walls block the spark.</p><span class="offer-tag">ONE PER RUN</span><button type="button" id="buy-storm">BUY · 150 GOLD</button></article>
+        </div>
+        <p id="shop-message" role="status">Run upgrades last until defeat. Health refills when you descend.</p>
+        <div class="shop-actions"><button type="button" id="shop-return">Return to floor</button><button type="button" id="shop-continue">Descend to next floor →</button></div>
+        <p class="shop-footnote">No purchase required. Gold spent here still counts toward your leaderboard total.</p>
+    </dialog>
     <script src="game.js"></script>
 </body>
 

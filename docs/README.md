@@ -6,6 +6,7 @@ Use these records to carry ideas, decisions, and implementation progress across 
 | --- | --- |
 | [Decisions](decisions.md) | Agreed goals and constraints, including what has not been implemented |
 | [Ideas](ideas.md) | Candidate features, unanswered questions, and suggested next work |
+| [Puzzle proposals](puzzles.md) | Optional treasure-puzzle concepts and unresolved design choices; not implemented |
 | [Implementation log](implementation-log.md) | What actually changed, how it was checked, and remaining limitations |
 | [Maintenance memory](../AGENTS.md) | Architecture, working practices, and known technical pitfalls |
 
