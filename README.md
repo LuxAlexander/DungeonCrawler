@@ -3,7 +3,7 @@
 A keyboard-controlled dungeon survival game by Alexander Lux, built with plain JavaScript and HTML Canvas. Explore randomly generated labyrinths as a penguin, fight slimes, collect upgrades, and submit your score online. A portfolio project for practicing programming and AI-assisted development.
 
 - [Live demo](https://alexanderlux.netlify.app)
-- [Original backend repository](https://github.com/LuxAlexander/JS_Backend) (retained during migration)
+- [Source repository](https://github.com/LuxAlexander/DungeonCrawler)
 - [Leaderboard API](https://jsgame-production.up.railway.app/api/leaderboard)
 
 The backend is currently **undeployed** (owner confirmed 2026-10-28). The API link is the previously configured address, not a working-service guarantee.
@@ -106,4 +106,4 @@ One Git repository contains two separately deployed components:
 - **Railway:** connect the same repository and branch, set the service root to `/backend`, and explicitly set the config file path to `/backend/railway.json`. It installs locked dependencies and starts with `npm start`. Set the variables above and provision access to your MongoDB database.
 - Update both frontend API URLs if the backend hostname changes, then verify the leaderboard. Only submit a real score or an explicitly authorized test score.
 
-The migration is prepared on `codex/dungeoncrawler-monorepo` in the existing `JS_Game` checkout. Both original Git histories are preserved through a merge commit, with no history rewrite. The original backend checkout remains intact. The GitHub rename to **DungeonCrawler**, publishing the branch, and reconnecting hosted deployments are separate follow-up steps after local review; no rename or deployment has been performed here. After renaming on GitHub, update the origin URL to `https://github.com/LuxAlexander/DungeonCrawler.git`. Retain the old backend repository until the combined deployment is verified.
+The combined GitHub repository is **DungeonCrawler**. Both original Git histories are preserved through a merge commit, with no history rewrite. The migration branch is `codex/dungeoncrawler-monorepo`; the local checkout remains named `JS_Game`. The origin URL is `https://github.com/LuxAlexander/DungeonCrawler.git`. The original backend checkout remains intact. The owner approved retiring the old GitHub backend repository after merging the migration. Hosted deployment reconnection is still a separate step; the backend is currently undeployed.

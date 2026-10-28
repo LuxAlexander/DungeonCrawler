@@ -6,10 +6,10 @@ Applies to the whole repository. Preserve verified facts, workflows, decisions, 
 
 - Product name: **DungeonCrawler**. Goal: portfolio project and practice in programming and AI-assisted development.
 - The owner makes high-level decisions and authorizes the assistant to implement code; do not assume the owner wants to write features as exercises.
-- Combine frontend and backend in this repository, preserving both histories and separate deployments. Keep the original backend intact until deployment is verified.
+- Combine frontend and backend in this repository, preserving both histories and separate deployments. The owner explicitly approved deleting the old GitHub JS_Backend repository after merging; keep the original local backend checkout intact.
 - This migration covers structure, docs, local setup, and deployment configuration. Existing gameplay defects are deferred.
 - The backend is currently undeployed. Do not provision a separate local backend or development database unless requested.
-- GitHub rename/publishing and deployment reconnection follow local review. The local checkout remains named JS_Game; the intended GitHub name is DungeonCrawler.
+- GitHub repository renamed to LuxAlexander/DungeonCrawler; origin updated. Owner approved publishing and merging the migration to main. Deployment reconnection remains pending. The local checkout remains named JS_Game.
 
 ## Baseline (inspected 2026-10-28)
 
