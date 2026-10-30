@@ -150,6 +150,14 @@ The owner found the solution text too easy. Shuffle the three distinct lanterns 
 
 **Status:** Implemented in working tree; uncommitted.
 
+**Partially superseded:** Compact mobile HUD and side panels below gameplay replaced by D-019.
+
 The owner requested touch controls and easy mobile-browser play. A left thumb pad moves and a right thumb pad independently aims/attacks with the equipped weapon, including diagonals. Tap buttons switch weapons and interact with lanterns. Coarse-pointer devices show controls automatically; keyboard input remains available.
 
 At up to 1100px width, touch layout uses a compact HUD, a player-following enlarged game view, and controls below the play area. Portrait and landscape are supported; run details and leaderboard remain accessible below. Pads suppress touch scrolling locally, with pointer capture/cancellation and existing reset/pause behavior. Page scrolling and browser zoom outside controls remain enabled. No gameplay balance or score contract changes. Physical-device ergonomics and Safari testing remain open.
+
+## D-019: Minimal mobile gameplay interface (2026-10-30)
+
+**Status:** Implemented in working tree; uncommitted. Supersedes D-018 mobile HUD/sidebar layout.
+
+The owner requested the minimum mobile interface with no sidebars, just the dungeon floor. On coarse-pointer screens up to 1100px wide, hide the entire header/HUD and both sidebars. The dungeon uses the remaining viewport above the essential move/aim pads and switch/interact controls. Keep weapon/ammo in that control strip, in-world health/hit/puzzle feedback, and the shop/game-over screens when needed. Hidden elements remain in the DOM for shared runtime updates. Desktop layout remains as before.

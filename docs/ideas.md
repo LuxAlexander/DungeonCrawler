@@ -30,7 +30,7 @@ These are proposals, not implementation commitments. Accepted high-level directi
 | I-017 | Exit upgrades at 25 / 50 / 150 gold | Implemented (uncommitted) | +5 max HP, +5 weapon damage, or a random Storm Spark/Fire Ring special offer; one purchase per floor, run-only and optional. |
 | I-018 | Optional floor puzzles | Partially implemented (uncommitted) | P-001 Lantern Order on floor one has a hidden shuffled order and red mistake flashes, rewarding Lantern Heart (+5 HP per kill); other puzzles remain proposals. See [puzzles.md](puzzles.md). |
 
-| I-019 | Mobile browser play | Implemented (uncommitted) | Independent move/aim thumb pads, switch/interact buttons, compact HUD, and player-following view. Emulated phone/tablet checks passed; physical-device/Safari ergonomics remain to test (D-018). |
+| I-019 | Mobile browser play | Implemented (uncommitted) | Independent move/aim thumb pads, switch/interact buttons, and player-following view; mobile HUD and both sidebars hidden. Emulated phone/tablet checks passed; physical-device/Safari ergonomics remain to test (D-018, D-019). |
 
 ## Historical first playable improvement proposal
 

@@ -191,6 +191,17 @@ Record completed work and actual validation here. This is a chronological histor
 
 **Limitations:** Physical Android/iPhone performance, thumb comfort, and Safari behavior remain untested. Browser script/screenshots are outside repository in the session visualization folder. No commits/deployments.
 
+## 2026-10-30 — Minimal mobile interface
+
+**Status:** Implemented, uncommitted; related D-019.
+
+- Removed mobile header/HUD, stats sidebar, leaderboard, and extra grid spacing on coarse-pointer screens up to 1100px. Dungeon fills the viewport above essential touch controls; shop/game-over remain available. Desktop layout preserved.
+- Removed redundant compact-header CSS and updated current documentation. No JavaScript or balance changes in this pass.
+
+**Verification:** Isolated Edge mobile/touch browser checks passed at 320x568, 390x844, 844x390, and 768x1024: header and both panels hidden, controls within viewport, no horizontal overflow, simultaneous touch movement/attack, weapon/bow/lantern taps, camera tracking, shop return, and retry. Desktop header/panels remain visible and touch controls hidden. Portrait/landscape screenshots visually inspected; no browser errors. API blocked and browser/server closed. Markdown links and whitespace checked. Existing 69-test gameplay result was not rerun for this CSS/documentation-only pass.
+
+**Limitations:** Physical-device/Safari comfort and performance remain untested. No commits or deployment.
+
 ## Entry format for future work
 
 Use a dated heading and include:
