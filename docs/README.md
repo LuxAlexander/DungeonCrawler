@@ -6,9 +6,15 @@ Use these records to carry ideas, decisions, and implementation progress across 
 | --- | --- |
 | [Decisions](decisions.md) | Agreed goals and constraints, including what has not been implemented |
 | [Ideas](ideas.md) | Candidate features, unanswered questions, and suggested next work |
-| [Puzzle proposals](puzzles.md) | Optional treasure-puzzle concepts and unresolved design choices; not implemented |
+| [Puzzles](puzzles.md) | Implemented Lantern Order and further optional treasure-puzzle proposals |
 | [Implementation log](implementation-log.md) | What actually changed, how it was checked, and remaining limitations |
 | [Maintenance memory](../AGENTS.md) | Architecture, working practices, and known technical pitfalls |
+
+## Current working-tree status (2026-10-30)
+
+Gameplay changes are implemented locally and remain uncommitted; deployment has not been verified. Current controls and balance are in [README](../README.md), technical invariants in [AGENTS](../AGENTS.md), and the latest accepted changes in D-013–D-018 in [decisions](decisions.md). Touch pads and a player-following mobile view are implemented alongside keyboard controls. Lantern Order is implemented only on floor one with a hidden shuffled sequence, red mistake feedback, and Lantern Heart reward; the other puzzles remain proposals.
+
+The implementation log is chronological evidence, so older entries retain the values and checks from their date. Supersession notes in decisions identify later changes. Maintenance guidance describes current behavior rather than an accumulation of outdated snapshots.
 
 ## Updating these records
 

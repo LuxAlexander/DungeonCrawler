@@ -20,7 +20,12 @@ function game(options = {}) {
             if (!elements.has(id)) elements.set(id, {
                 textContent: '', innerText: '', innerHTML: '', value: '', style: {}, children: [],
                 showModal() { this.open=true; }, close() { this.open=false; },
-                addEventListener() {}, appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; }
+                handlers: {}, capture: null,
+                addEventListener(name, handler) { this.handlers[name] = handler; },
+                getBoundingClientRect() { return { left: 0, top: 0, width: 108, height: 108 }; },
+                setPointerCapture(id) { this.capture = id; }, hasPointerCapture(id) { return this.capture === id; },
+                releasePointerCapture() { this.capture = null; },
+                appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; }
             });
             return elements.get(id);
         },
@@ -92,7 +97,7 @@ test('diagonal movement has the same speed as cardinal movement', () => {
 
 test('live stats reflect damage, goo slowing, weapon switching and dead enemies', () => {
     const g = game();
-    g.run(arena + `player.onHit(25); player.speedModifier = 0.5; player.movement(0); player.inventory.weapons.push(new Bow()); player.inventory.index = 1; const deadEnemy = new Enemy(0,0); deadEnemy.dead = true; dungeon.room.entities = [deadEnemy, new Enemy(100,100)]; updateStats();`);
+    g.run(arena + `player.onHit(25); player.speedModifier = 0.5; player.movement(0); player.inventory.weapons.push(new Bow());player.inventory.index=1;player.ammo=8; player.inventory.index = 1; const deadEnemy = new Enemy(0,0); deadEnemy.dead = true; dungeon.room.entities = [deadEnemy, new Enemy(100,100)]; updateStats();`);
     for (const [id, expected] of Object.entries({ 'health-stat': '75 / 100', 'hp-count': '75', 'weapon-stat': 'Bow', 'damage-stat': '20', 'speed-stat': '120 px/s', 'status-stat': 'Slowed', 'remaining-count': '1' })) {
         assert.equal(String(g.elements.get(id).textContent), expected, id);
     }
@@ -102,7 +107,7 @@ test('floor transitions heal and clear projectiles after simulation', () => {
     const g = game();
     g.run(`player.pos = {x: 935, y: 220}; player.health = 30; arrows.push(new Arrow(100,100,{x:1,y:0})); dungeon.room.doors[0].update(); leaveFloor();`);
     assert.equal(g.run('dungeon.floor'), 2);
-    assert.equal(g.run('player.health'), 100);
+    assert.equal(g.run('player.health'), 60);
     assert.equal(g.run('arrows.length'), 0);
     assert.equal(String(g.elements.get('floor-count').textContent), '2');
 });
@@ -436,8 +441,8 @@ test('late floors preserve readable warnings and cap movement/shooting accelerat
     assert.equal(g.run('player.health'),100);
 });
 
-test('arrow keys select the collected bow and fire without moving the player', () => {
-    const g=game();g.run(arena+'player.inventory.weapons.push(new Bow());');
+test('arrow keys fire the equipped bow without moving the player', () => {
+    const g=game();g.run(arena+'player.inventory.weapons.push(new Bow());player.inventory.index=1;player.ammo=8;');
     g.listeners.keydown({key:'ArrowRight',preventDefault(){}});
     g.run('player.update(1/60);');
     assert.equal(g.run('player.weapon.name'),'Bow');
@@ -450,7 +455,7 @@ test('arrow keys select the collected bow and fire without moving the player', (
 
 test('two perpendicular arrows fire normalized diagonals in all four quadrants', () => {
     for(const [horizontal,vertical,x,y]of [['ArrowRight','ArrowUp',1,-1],['ArrowRight','ArrowDown',1,1],['ArrowLeft','ArrowUp',-1,-1],['ArrowLeft','ArrowDown',-1,1]]){
-        const g=game();g.run(arena+'player.inventory.weapons.push(new Bow());');
+        const g=game();g.run(arena+'player.inventory.weapons.push(new Bow());player.inventory.index=1;player.ammo=8;');
         for(const key of [horizontal,vertical])g.listeners.keydown({key,preventDefault(){}});
         g.run('player.update(1/60);');
         assert.equal(g.run('Math.sign(arrows[0].vel.x)'),x);
@@ -463,13 +468,13 @@ test('opposite aiming keys cancel, and a bow must be collected before shooting',
     const g=game();g.run(arena);
     g.listeners.keydown({key:'ArrowRight',preventDefault(){}});g.run('player.update(0.01)');
     assert.equal(g.run('arrows.length'),0);
-    g.run('player.inventory.weapons.push(new Bow());');
+    g.run('player.inventory.weapons.push(new Bow());player.inventory.index=1;player.ammo=8;');
     g.listeners.keydown({key:'ArrowLeft',preventDefault(){}});g.run('player.update(0.01)');
     assert.equal(g.run('arrows.length'),0);
 });
 
 test('WASD strafing does not change aimed shots and holding respects cooldown', () => {
-    const g=game();g.run(arena+'player.inventory.weapons.push(new Bow());');
+    const g=game();g.run(arena+'player.inventory.weapons.push(new Bow());player.inventory.index=1;player.ammo=8;');
     for(const key of ['d','ArrowUp'])g.listeners.keydown({key,preventDefault(){}});
     g.run('player.update(0.01);player.update(0.1);');
     assert(g.run('player.pos.x')>55);
@@ -515,24 +520,24 @@ test('shop purchases respect prices, cannot overspend, and preserve total gold e
     const g=game();g.run('goldCollected=100;openFloorShop();');
     assert.equal(g.run('buyUpgrade("storm")'),false);
     assert.equal(g.run('buyUpgrade("vitality")'),true);
-    assert.equal(g.run('buyUpgrade("vitality")'),true);
-    assert.equal(g.run('buyUpgrade("damage")'),true);
-    assert.equal(g.run('goldCollected-goldSpent'),0);
+    assert.equal(g.run('buyUpgrade("vitality")'),false);
+    assert.equal(g.run('buyUpgrade("damage")'),false);
+    assert.equal(g.run('goldCollected-goldSpent'),75);
     assert.equal(g.run('goldCollected'),100);
-    assert.equal(g.run('player.maxHealth'),120);
-    assert.equal(g.run('player.weapon.damage'),30);
+    assert.equal(g.run('player.maxHealth'),105);
+    assert.equal(g.run('player.weapon.damage'),25);
     assert.equal(g.run('buyUpgrade("vitality")'),false);
     assert.equal(g.run('buyUpgrade("__proto__")'),false);
 });
 
 test('damage upgrades apply to existing weapons and bows collected later', () => {
-    const g=game();g.run(arena+'goldCollected=100;openFloorShop();buyUpgrade("damage");buyUpgrade("damage");returnToFloor();const pickup=new Item(55,50,"bow");pickup.update(0);');
+    const g=game();g.run(arena+'goldCollected=100;openFloorShop();buyUpgrade("damage");leaveFloor();openFloorShop();buyUpgrade("damage");returnToFloor();const pickup=new Item(player.pos.x,player.pos.y,"bow");pickup.update(0);');
     assert.equal(g.run('player.inventory.weapons[0].damage'),35);
     assert.equal(g.run('player.inventory.weapons[1].damage'),30);
 });
 
 test('Storm Spark costs 150, is unique, and chains to only one visible nearby target', () => {
-    const g=game();g.run(arena+'goldCollected=300;openFloorShop();buyUpgrade("storm");');
+    const g=game();g.run(arena+'goldCollected=300;dungeon.perkOffer="storm";openFloorShop();buyUpgrade("storm");');
     assert.equal(g.run('buyUpgrade("storm")'),false);
     assert.equal(g.run('goldSpent'),150);
     g.run('returnToFloor();const primary=new Enemy(100,50),secondary=new Enemy(150,50),third=new Enemy(200,50);dungeon.room.entities=[primary,secondary,third];strikeEnemy(primary,20);drawEffects(0);');
@@ -554,13 +559,13 @@ test('shop return does not reopen until stepping away from the doorway', () => {
     assert.equal(g.run('shopOpen'),true);
 });
 
-test('zero-gold players can descend, purchases survive floors, and vitality refills', () => {
+test('zero-gold players can descend, purchases survive floors, and descent heals partially', () => {
     const g=game();g.run('openFloorShop();leaveFloor();leaveFloor();');
     assert.equal(g.run('dungeon.floor'),2);
     g.run('goldCollected=25;openFloorShop();buyUpgrade("vitality");player.health=40;leaveFloor();');
-    assert.equal(g.run('player.maxHealth'),110);
-    assert.equal(g.run('player.health'),110);
-    assert.equal(g.elements.get('max-hp-count').textContent,110);
+    assert.equal(g.run('player.maxHealth'),105);
+    assert.equal(g.run('player.health'),70);
+    assert.equal(g.elements.get('max-hp-count').textContent,105);
 });
 
 test('new runs reset shop upgrades, spending, and modal state', () => {
@@ -571,4 +576,227 @@ test('new runs reset shop upgrades, spending, and modal state', () => {
     assert.equal(g.run('player.damageBonus'),0);
     assert.equal(g.run('goldSpent'),0);
     assert.equal(g.run('shopOpen'),false);
+});
+test('ammo pickups reward once, bow consumes ammo, and empty bow cannot shoot', () => {
+    const g=game();g.run(arena+`const bundle=new Item(55,50,'arrows');bundle.update(0);bundle.update(0);const bowPickup=new Item(55,50,'bow');bowPickup.update(0);player.inventory.index=1;`);
+    assert.equal(g.run('player.ammo'),14);
+    g.run('player.weapon.attack(player,dungeon.room)');
+    assert.equal(g.run('player.ammo'),13);
+    assert.equal(g.run('arrows[0].damage'),20);
+    g.run('player.ammo=0;player.weapon.attack(player,dungeon.room)');
+    assert.equal(g.run('arrows.length'),1);
+    g.run('dungeon.nextLevel()');assert.equal(g.run('player.ammo'),0);
+    g.run('player.ammo=20;initGame()');assert.equal(g.run('player.ammo'),0);
+});
+
+test('equipped sword attacks arrow direction even with a bow collected', () => {
+    const g=game();g.run(arena+`player.inventory.weapons.push(new Bow());const above=new Enemy(55,10),below=new Enemy(55,90);dungeon.room.entities=[above,below];keys.down=true;keys.aimUp=true;player.update(0.01);`);
+    assert.equal(g.run('above.health'),75);
+    assert.equal(g.run('below.health'),100);
+    assert.equal(g.run('player.weapon.name'),'Sword');
+    assert.equal(g.run('arrows.length'),0);
+    assert.equal(g.run('player.swing.angle'),-Math.PI/2);
+});
+
+test('enemy population grows every two floors with a cap and guaranteed elements and ammo', () => {
+    const g=game();
+    for(let floor=1;floor<=21;floor++){
+        assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Enemy).length'),Math.min(12,4+Math.floor((floor-1)/2)));
+        assert.equal(g.run('new Set(dungeon.room.entities.filter(e=>e instanceof Enemy).map(e=>e.element)).size'),3);
+        assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Item && e.type==="arrows").length'),2);
+        g.run('dungeon.nextLevel()');
+    }
+});
+
+
+test('shop purchase and random perk offer persist on reopening and reset next floor', () => {
+    const g=game();g.run('goldCollected=500;dungeon.perkOffer="fire";openFloorShop();');
+    assert.equal(g.run('buyUpgrade("storm")'),false);
+    assert.equal(g.elements.get('offer-storm').hidden,true);
+    assert.equal(g.elements.get('offer-fire').hidden,false);
+    assert.equal(g.run('buyUpgrade("fire")'),true);
+    g.run('returnToFloor();openFloorShop();');
+    assert.equal(g.run('dungeon.perkOffer'),'fire');
+    assert.equal(g.run('buyUpgrade("damage")'),false);
+    assert.equal(g.run('goldSpent'),150);
+    g.run('leaveFloor();openFloorShop()');
+    assert.equal(g.run('buyUpgrade("damage")'),true);
+    g.run('leaveFloor();player.health=99;openFloorShop();leaveFloor()');
+    assert.equal(g.run('player.health'),100);
+});
+
+test('slime loot awards once, coins count as earned gold, and small health waits when full', () => {
+    const g=game();g.run(arena+`Math.random=()=>0;const slime=new Enemy(55,50);slime.destroy();slime.destroy();`);
+    assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Item).length'),2);
+    g.run('const coin=dungeon.room.entities.find(e=>e.type==="coin");coin.update(0);coin.update(0);');
+    assert.equal(g.run('goldCollected'),3);
+    g.run('const health=dungeon.room.entities.find(e=>e.type==="small-health");health.update(0);');
+    assert.equal(g.run('health.dead'),false);
+    g.run('player.health=98;health.update(0);health.update(0);');
+    assert.equal(g.run('player.health'),100);
+    g.run('player.health=20;new Item(55,50,"health").update(0)');
+    assert.equal(g.run('player.health'),45);
+});
+
+test('all flying slime elements hit once with swept collision and respect invulnerability and walls', () => {
+    for (const element of ['goo','fire','water']) {
+        const g=game();g.run(arena+`player.pos={x:160,y:50};const shot=new GooShot(50,55,{x:1,y:0},'${element}');shot.update(1);shot.update(1);`);
+        assert.equal(g.run('player.health'),94);
+        assert.equal(g.run('shot.dead'),true);
+        g.run(`new GooShot(160,55,{x:1,y:0},'${element}').update(0)`);
+        assert.equal(g.run('player.health'),94);
+        g.run(`player.invulnerable=0;dungeon.room.tiles=[new Tile(120,40,20,false)];new GooShot(50,55,{x:1,y:0},'${element}').update(1)`);
+        assert.equal(g.run('player.health'),94);
+    }
+});
+
+test('Fire Ring lasts five seconds, pulses without chaining, respects walls, and resets', () => {
+    const g=game();g.run(arena+`player.fireRing=true;const target=new Enemy(90,50),hidden=new Enemy(55,100);dungeon.room.entities=[target,hidden];dungeon.room.tiles=[new Tile(40,85,40,false)];strikeEnemy(target,1);player.update(0.01);`);
+    assert.equal(g.run('target.health'),91);
+    assert.equal(g.run('hidden.health'),100);
+    assert(g.run('player.ringTime')<5);
+    g.run('strikeEnemy(target,1)');assert(g.run('player.ringTime')<5);
+    g.run('for(let i=0;i<51;i++)player.update(0.1)');
+    assert.equal(g.run('player.ringTime'),0);
+    const hp=g.run('target.health');g.run('player.update(0.5)');assert.equal(g.run('target.health'),hp);
+    g.run('player.ringTime=5;openFloorShop();const before=player.ringTime;animate(100)');assert.equal(g.run('player.ringTime'),5);
+    g.run('leaveFloor()');assert.equal(g.run('player.ringTime'),0);
+    g.run('initGame()');assert.equal(g.run('player.fireRing'),false);
+});
+
+test('Fire Ring hits multiple targets inside its area and marks only affected slimes', () => {
+    const g=game();g.run(arena+`player.fireRing=true;player.ringTime=5;player.ringCooldown=20;const nearA=new Enemy(90,50),nearB=new Enemy(55,10),far=new Enemy(200,50);dungeon.room.entities=[nearA,nearB,far];player.update(0.01);`);
+    assert.equal(g.run('nearA.health'),92);
+    assert.equal(g.run('nearB.health'),92);
+    assert.equal(g.run('far.health'),100);
+    g.calls.length=0;g.run('nearA.draw();nearB.draw();far.draw()');
+    assert.equal(g.calls.filter(call=>call[0]==='strokeRect').length,2);
+    g.run('dungeon.room.tiles=[new Tile(80,40,40,false)]');g.calls.length=0;g.run('nearA.draw()');
+    assert.equal(g.calls.filter(call=>call[0]==='strokeRect').length,0);
+});
+
+test('skill bar shows ownership, active duration, cooldown, ready state, and reset', () => {
+    const g=game();
+    assert.equal(g.elements.get('skill-status').textContent,'No skill equipped');
+    g.run(arena+'player.fireRing=true;const target=new Enemy(90,50);dungeon.room.entities=[target];strikeEnemy(target,1);updateStats()');
+    assert.equal(g.run('player.ringCooldown'),20);
+    assert.equal(g.elements.get('skill-meter').value,0);
+    assert.match(g.elements.get('skill-status').textContent,/active 5.0s/);
+    g.run('player.ringTime=0;player.ringCooldown=15;updateStats()');
+    assert.equal(g.elements.get('skill-meter').value,5);
+    assert.equal(g.elements.get('skill-status').textContent,'Fire Ring · 15s');
+    g.run('player.ringCooldown=0;updateStats()');
+    assert.equal(g.elements.get('skill-meter').value,20);
+    assert.match(g.elements.get('skill-status').textContent,/ready on hit/);
+    g.run('initGame()');assert.equal(g.elements.get('skill-meter').value,0);
+});
+
+test('slime shots leave matching patches on player impact even when damage is blocked', () => {
+    for (const element of ['goo','fire','water']) {
+        const g=game();g.run(`dungeon.currentRoom=new Room(9,9,40);const spot=dungeon.room.getSafePos();player.pos={...spot};player.invulnerable=1;const shot=new GooShot(spot.x,spot.y,{x:1,y:0},'${element}');shot.update(0);shot.update(0);`);
+        assert.equal(g.run('player.health'),100);
+        assert.equal(g.run('shot.dead'),true);
+        assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof GooPuddle).length'),1);
+        assert.equal(g.run('dungeon.room.entities.find(e=>e instanceof GooPuddle).element'),element);
+        assert.equal(g.run('dungeon.room.entities.find(e=>e instanceof GooPuddle).timer'),6);
+    }
+});
+
+test('reserved player spawns stay at least 280px from every enemy across floors and seeds', () => {
+    const g=game();
+    for(let seed=1;seed<=20;seed++) {
+        g.run(`var spawnSeed=${seed};Math.random=()=>{spawnSeed=(spawnSeed*1664525+1013904223)>>>0;return spawnSeed/4294967296};initGame();`);
+        for(let floor=1;floor<=12;floor++) {
+            assert.equal(g.run('dungeon.room.isWalkable(player.pos.x,player.pos.y,player.width,player.height)'),true);
+            assert(g.run('Math.min(...dungeon.room.entities.filter(e=>e instanceof Enemy).map(e=>dist(center(player),center(e))))')>=280);
+            g.run('dungeon.nextLevel()');
+        }
+    }
+});
+
+test('Lantern Order resets mistakes, opens one optional reward, and accepts E once per press', () => {
+    const g=game();g.run('dungeon.room.puzzle.order=[0,2,1]');
+    assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Lantern).length'),3);
+    for(const i of [0,1,2]) {
+        assert(g.run(`dungeon.room.findPath(player,center(dungeon.room.entities.find(e=>e instanceof Lantern&&e.index===${i}))).length`)>0);
+    }
+    g.run('player.pos={x:125,y:125}');
+    g.listeners.keydown({key:'e',preventDefault(){}});g.run('player.update(0)');
+    assert.equal(g.run('dungeon.room.puzzle.progress'),0);
+    assert.match(g.run('dungeon.room.puzzle.message'),/Wrong/);
+    g.run('player.pos={x:45,y:125}');g.listeners.keydown({key:'E',preventDefault(){}});g.listeners.keyup({key:'E'});g.run('player.update(0)');
+    assert.equal(g.run('dungeon.room.puzzle.progress'),1);
+    g.listeners.keydown({key:'e',repeat:true,preventDefault(){}});g.run('player.update(0)');
+    assert.equal(g.run('dungeon.room.puzzle.progress'),1);
+    g.run('player.pos={x:205,y:125};interactLantern();player.pos={x:125,y:125};interactLantern();interactLantern()');
+    assert.equal(g.run('dungeon.room.puzzle.solved'),true);
+    assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Item&&e.type==="lantern-heart").length'),1);
+    assert.equal(g.run('player.lanternHeart'),false);
+    g.run('player.pos={x:208,y:128};dungeon.room.entities.find(e=>e.type==="lantern-heart").update(0)');
+    assert.equal(g.run('player.lanternHeart'),true);
+    g.run('openFloorShop();leaveFloor()');
+    assert.equal(g.run('player.lanternHeart'),true);
+    assert.equal(g.run('dungeon.room.puzzle'),undefined);
+    g.run('initGame();openFloorShop();leaveFloor()');
+    assert.equal(g.run('dungeon.floor'),2); // Puzzle never gates the exit.
+    assert.equal(g.run('player.lanternHeart'),false);
+});
+
+test('Lantern Heart heals 5 per kill once, caps at max, and cannot revive a dead player', () => {
+    const g=game();g.run(arena+'player.lanternHeart=true;player.health=70;const victim=new Enemy(150,150);victim.destroy();victim.destroy()');
+    assert.equal(g.run('player.health'),75);
+    g.run('player.health=99;new Enemy(150,150).destroy()');assert.equal(g.run('player.health'),100);
+    g.run('player.health=0;new Enemy(150,150).destroy()');assert.equal(g.run('player.health'),0);
+});
+
+test('lantern order is a shuffled permutation fixed during attempts with no solution text', () => {
+    const g=game();const seen=new Set();
+    for(let i=0;i<20;i++) {
+        g.run('initGame()');
+        const order=JSON.parse(g.run('JSON.stringify(dungeon.room.puzzle.order)'));
+        assert.deepEqual([...order].sort(),[0,1,2]);seen.add(order.join(','));
+        g.run('var wrongIndex=dungeon.room.puzzle.order[0]===0?1:0;player.pos={x:45+wrongIndex*80,y:125};interactLantern();updateStats();');
+        assert.deepEqual(JSON.parse(g.run('JSON.stringify(dungeon.room.puzzle.order)')),order);
+        assert.equal(g.run('dungeon.room.puzzle.progress'),0);
+        assert.equal(g.run('dungeon.room.puzzle.errorUntil-runTime'),0.7);
+        assert(!g.elements.get('puzzle-status').textContent.includes('→'));
+        assert(!g.run('dungeon.room.puzzle.message').includes('→'));
+    }
+    assert(seen.size>1);
+    g.calls.length=0;g.run('dungeon.room.entities.filter(e=>e instanceof Lantern).forEach(e=>e.draw())');
+    assert(!g.calls.some(call=>call[0]==='fillText'&&/I >|I →/.test(call[1])));
+    g.run('openFloorShop();animate(lastTime+100)');assert(g.run('dungeon.room.puzzle.errorUntil>runTime'));
+    g.run('returnToFloor();runTime+=0.71');assert.equal(g.run('dungeon.room.puzzle.errorUntil>runTime'),false);
+});
+
+test('touch pads support independent simultaneous movement and attacks, release, and cancellation', () => {
+    const g=game();g.run(arena);
+    const event=(id,x,y)=>({pointerId:id,clientX:x,clientY:y,pointerType:'touch',preventDefault(){}});
+    const move=g.elements.get('move-pad'),aim=g.elements.get('aim-pad');
+    move.handlers.pointerdown(event(1,100,54));aim.handlers.pointerdown(event(2,54,0));
+    g.run('player.update(0.01)');assert(g.run('player.pos.x')>55);assert.equal(g.run('player.swing.angle'),-Math.PI/2);
+    assert.equal(g.run('touchKeys.right'),true);assert.equal(g.run('touchKeys.aimUp'),true);
+    move.handlers.pointerup(event(1,100,54));assert.equal(g.run('touchKeys.right'),false);assert.equal(g.run('touchKeys.aimUp'),true);
+    aim.handlers.pointercancel(event(2,54,0));assert.equal(g.run('touchKeys.aimUp'),false);
+    assert.equal(move.capture,null);assert.equal(aim.capture,null);
+});
+
+test('touch deadzone, pointer ownership, keyboard coexistence, and blur cleanup', () => {
+    const g=game();const move=g.elements.get('move-pad');
+    const event=(id,x,y)=>({pointerId:id,clientX:x,clientY:y,pointerType:'touch',preventDefault(){}});
+    move.handlers.pointerdown(event(1,54,54));assert(!g.run('touchKeys.left||touchKeys.right||touchKeys.up||touchKeys.down'));
+    move.handlers.pointermove(event(1,100,100));assert(g.run('touchKeys.right&&touchKeys.down'));
+    move.handlers.pointerdown(event(3,0,0));assert(g.run('touchKeys.right&&touchKeys.down'));
+    g.listeners.keydown({key:'d',preventDefault(){}});move.handlers.lostpointercapture(event(1,0,0));assert.equal(g.run('inputDown("right")'),true);
+    move.handlers.pointerdown(event(4,0,54));g.listeners.blur();assert.equal(g.run('Object.values(touchKeys).some(Boolean)||Object.values(keys).some(Boolean)'),false);assert.equal(move.capture,null);
+});
+
+test('touch action buttons switch weapons and interact, while shop and retry clear held pads', () => {
+    const g=game();g.run('player.inventory.weapons.push(new Bow());');
+    g.elements.get('touch-switch').handlers.click();g.run('player.update(0)');assert.equal(g.run('player.weapon.name'),'Bow');
+    g.elements.get('touch-interact').handlers.click();assert.equal(g.run('keys.interact'),true);
+    const move=g.elements.get('move-pad');const event={pointerId:1,clientX:100,clientY:54,pointerType:'touch',preventDefault(){}};
+    move.handlers.pointerdown(event);g.run('openFloorShop()');assert.equal(g.run('touchKeys.right'),false);
+    move.handlers.pointerdown(event);g.elements.get('touch-switch').handlers.click();assert.equal(g.run('keys.switch||touchKeys.right'),false);
+    g.run('returnToFloor();initGame()');assert.equal(g.run('Object.values(touchKeys).some(Boolean)'),false);
 });

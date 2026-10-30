@@ -231,3 +231,64 @@ canvas { border-color: #405557; box-shadow: 0 20px 40px #0006; }
 #shop-continue { background: #d6c18b; color: #14211d; border-color: #e8d7ab; font-weight: bold; }
 .shop-footnote { font-size: 10px; line-height: 1.6; color: #96aaa1; margin: 18px 0 0; }
 @media (max-width: 600px) { #floor-shop { padding: 18px; } .shop-offers { grid-template-columns: minmax(0, 1fr); } .shop-offer { padding: 15px; } .shop-offer p { margin-bottom: 12px; } .shop-heading .eyebrow { display: inline; } }
+
+.shop-offer[hidden] { display: none; }
+
+.skill-caption { margin: 10px 0 5px; font-size: 9px; line-height: 1.5; color: #efbd87; }
+.skill-meter { appearance: none; display: block; width: 100%; height: 7px; border: 1px solid #99673d; background: #0a171a; accent-color: #e8a34e; }
+.skill-meter::-webkit-progress-bar { background: #0a171a; }
+.skill-meter::-webkit-progress-value { background: #e8a34e; }
+.skill-meter::-moz-progress-bar { background: #e8a34e; }
+.skill-meter.active { border-color: #ffe0a2; box-shadow: 0 0 7px #ef862b80; }
+
+.puzzle-status { padding: 10px; margin: 12px 0 0; border: 1px solid #a88b4c; background: #bf8e2420; color: #ffe2a0; font-size: 11px; line-height: 1.7; }
+.puzzle-status[hidden] { display: none; }
+
+/* Touch pads retain independent pointers, leaving page scrolling available outside them. */
+#game-viewport { min-width: 0; }
+#touch-controls { display: none; }
+@media (any-pointer: coarse) {
+    #touch-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: #112226; border: 1px solid #52625a; user-select: none; }
+    .touch-pad-group { flex: 0 0 auto; text-align: center; font-size: 9px; color: #d6cca5; }
+    .touch-pad { width: 108px; height: 108px; margin-top: 6px; border-radius: 50%; border: 2px solid #789789; background: radial-gradient(circle, #3a5753, #172b30); display: grid; place-items: center; position: relative; touch-action: none; }
+    #aim-pad { border-color: #d4a263; background: radial-gradient(circle, #5d4533, #2b2525); }
+    .pad-cross { font-size: 68px; color: #adc7b22e; pointer-events: none; }
+    .pad-thumb { position: absolute; width: 42px; height: 42px; border-radius: 50%; background: #9bbfaa; border: 2px solid #d3e2c9; box-shadow: 0 3px 8px #0008; pointer-events: none; }
+    #aim-pad .pad-thumb { background: #d9a260; border-color: #ffe1a0; }
+    .touch-actions { display: flex; flex: 1; max-width: 170px; min-width: 0; flex-direction: column; gap: 8px; text-align: center; font-size: 10px; color: #ead8af; }
+    .touch-actions button { min-height: 44px; padding: 6px; font: inherit; color: #e7edde; background: #253e3b; border: 1px solid #7d9380; border-radius: 5px; touch-action: manipulation; }
+    #floor-shop button, #game-over-overlay button { min-height: 44px; touch-action: manipulation; }
+}
+@media (any-pointer: coarse) and (max-width: 1100px) {
+    body { padding: 0; }
+    #main-layout { gap: 12px; grid-template-columns: minmax(0, 1fr); }
+    #game-wrapper { grid-column: 1; grid-row: 1; }
+    #player-stats { grid-column: 1; grid-row: 2; }
+    #leaderboard { grid-column: 1; grid-row: 3; }
+    #game-wrapper { height: 100svh; display: flex; flex-direction: column; }
+    #ui-layer { flex: 0 0 auto; padding: 8px 10px; }
+    .hud-heading { margin-bottom: 6px; }
+    .hud-heading .eyebrow { display: none; }
+    .hud-heading h1 { font-size: 18px; margin: 0; }
+    .depth-badge { padding: 5px; font-size: 10px; }
+    .hud-readings { gap: 8px; margin-bottom: 6px; }
+    .health-caption { font-size: 9px; margin-bottom: 4px; }
+    .skill-caption { margin-top: 5px; }
+    .hud-counter { padding-left: 8px; }
+    .hud-counter strong { font-size: 17px; }
+    .hud-footer { display: none; }
+    #log { display: none; }
+    .puzzle-status { margin: 6px 0 0; padding: 4px 6px; font-size: 10px; line-height: 1.4; }
+    #game-viewport { flex: 1 1 auto; min-height: 110px; overflow: hidden; position: relative; background: #0e1d20; container-type: size; }
+    #game-viewport canvas { display: block; width: max(100%, 720px, 192.31cqh); max-width: none; height: auto; box-shadow: none; touch-action: none; }
+    #touch-controls { flex: 0 0 auto; }
+    #game-over-overlay { position: fixed; top: 50%; left: 50%; width: min(90vw, 360px); max-height: 90svh; overflow-y: auto; z-index: 20; }
+}
+@media (any-pointer: coarse) and (max-width: 1100px) and (orientation: landscape) {
+    .hud-heading { display: none; }
+    .touch-pad { width: 90px; height: 90px; }
+    .touch-actions { max-width: 300px; flex-direction: row; align-items: center; }
+    .touch-actions button { flex: 1; }
+    #touch-weapon { max-width: 70px; }
+    #touch-controls { padding-top: 3px; padding-bottom: max(3px, env(safe-area-inset-bottom)); }
+}

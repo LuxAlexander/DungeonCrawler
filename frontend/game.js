@@ -33,31 +33,84 @@ let effects = [];
 
 const keys = {
     left: false, right: false, up: false, down: false,
-    attack: false, switch: false,
+    attack: false, switch: false, interact: false,
     aimLeft: false, aimRight: false, aimUp: false, aimDown: false
 };
+const touchKeys = {};
+const touchPads = [];
+const inputDown = action => keys[action] || touchKeys[action];
 
 function resetKeys() {
     Object.keys(keys).forEach(key => keys[key] = false);
+    Object.keys(touchKeys).forEach(key => touchKeys[key] = false);
+    touchPads.forEach(pad => pad.reset());
+}
+
+function setupTouchPad(id, actions) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const thumb = document.getElementById(id + "-thumb");
+    let pointer = null;
+    const reset = () => {
+        const previous = pointer;
+        pointer = null;
+        actions.forEach(action => touchKeys[action] = false);
+        thumb.style.transform = "translate(0px, 0px)";
+        if (previous !== null && element.hasPointerCapture(previous)) element.releasePointerCapture(previous);
+    };
+    touchPads.push({ reset });
+    const move = event => {
+        const bounds = element.getBoundingClientRect();
+        const dx = event.clientX - bounds.left - bounds.width / 2;
+        const dy = event.clientY - bounds.top - bounds.height / 2;
+        const length = Math.hypot(dx, dy);
+        const scale = Math.min(1, bounds.width * 0.32 / (length || 1));
+        thumb.style.transform = "translate(" + dx * scale + "px, " + dy * scale + "px)";
+        const active = length >= 12;
+        touchKeys[actions[0]] = active && dx / length < -0.38;
+        touchKeys[actions[1]] = active && dx / length > 0.38;
+        touchKeys[actions[2]] = active && dy / length < -0.38;
+        touchKeys[actions[3]] = active && dy / length > 0.38;
+    };
+    element.addEventListener("pointerdown", event => {
+        if (pointer !== null || isGameOver || shopOpen || (event.pointerType === "mouse" && event.button !== 0)) return;
+        event.preventDefault();
+        pointer = event.pointerId;
+        element.setPointerCapture(pointer);
+        move(event);
+    });
+    element.addEventListener("pointermove", event => {
+        if (event.pointerId === pointer) { event.preventDefault(); move(event); }
+    });
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
+        element.addEventListener(name, event => { if (event.pointerId === pointer) reset(); });
+    }
+    element.addEventListener("contextmenu", event => event.preventDefault());
+}
+
+setupTouchPad("move-pad", ["left", "right", "up", "down"]);
+setupTouchPad("aim-pad", ["aimLeft", "aimRight", "aimUp", "aimDown"]);
+for (const [id, action] of [["touch-switch", "switch"], ["touch-interact", "interact"]]) {
+    document.getElementById(id)?.addEventListener("click", () => {
+        if (!shopOpen && !isGameOver) keys[action] = true;
+    });
 }
 
 function handleKey(e, pressed) {
     const key = e.key.toLowerCase();
     const controls = { a: "left", d: "right", w: "up", s: "down",
         arrowleft: "aimLeft", arrowright: "aimRight", arrowup: "aimUp", arrowdown: "aimDown",
-        " ": "attack", q: "switch" };
+        " ": "attack", q: "switch", e: "interact" };
     const action = controls[key];
     if (!action) return;
     if (!pressed) {
-        keys[action] = false;
+        // Keep one-shot interactions queued even if the key is released between frames.
+        if (action !== "interact") keys[action] = false;
         return;
     }
     if (isGameOver || shopOpen || e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
     e.preventDefault();
-    if (action !== "switch" || !e.repeat) keys[action] = true;
-    if (action.startsWith("aim") && !e.repeat && !player.inventory.weapons.some(weapon => weapon instanceof Bow)) {
-        updateUI("Find a bow to fire with the arrow keys.");
-    }
+    if (!["switch", "interact"].includes(action) || !e.repeat) keys[action] = true;
 }
 
 window.addEventListener("keydown", e => handleKey(e, true));
@@ -148,7 +201,7 @@ function updateStats() {
         "floor-count": dungeon.floor,
         "gold-earned-stat": goldCollected,
         "max-hp-count": player.maxHealth,
-        "perk-stat": player.stormSpark ? "Storm Spark" : "None",
+        "perk-stat": [player.stormSpark && "Storm Spark", player.fireRing && "Fire Ring", player.lanternHeart && "Lantern Heart (+5 HP/kill)"].filter(Boolean).join(" + ") || "None",
         "enemy-health-scale": Math.round(difficulty * 100) + "%",
         "enemy-hit-stat": 12 + dungeon.floor - 1,
         "floor-badge": "DEPTH " + String(dungeon.floor).padStart(2, "0"),
@@ -157,11 +210,32 @@ function updateStats() {
         "hp-count": Math.ceil(player.health),
         "weapon-stat": player.weapon.name,
         "damage-stat": player.weapon.damage,
+        "ammo-stat": player.ammo,
         "speed-stat": (player.sliding ? Math.hypot(player.slideVelocity.x, player.slideVelocity.y) : player.speed * 60 * (player.slowed ? 0.5 : 1)).toFixed(0) + " px/s",
         "status-stat": [player.inFire && "Burning", player.sliding && "Sliding", player.slowed && "Slowed"].filter(Boolean).join(" · ") || "Normal",
         "remaining-count": dungeon.room.entities.filter(e => e instanceof Enemy && !e.dead).length
     };
     const healthMeter = document.getElementById("health-meter");
+    const touchWeapon = document.getElementById("touch-weapon");
+    if (touchWeapon) touchWeapon.textContent = player.weapon.name + (player.weapon instanceof Bow ? " · " + player.ammo : "");
+    const puzzleStatus = document.getElementById("puzzle-status");
+    if (puzzleStatus) {
+        puzzleStatus.hidden = !dungeon.room.puzzle;
+        const puzzle = dungeon.room.puzzle;
+        if (puzzle) puzzleStatus.textContent = puzzle.solved ?
+            (player.lanternHeart ? "Lantern Heart collected: heal 5 HP per kill." : "Lanterns solved! Collect the heart in the open niche.") :
+            "Lantern Order · E near a lantern · " + puzzle.progress + "/3 lit. " + puzzle.message;
+    }
+    const skillMeter = document.getElementById("skill-meter");
+    if (skillMeter) {
+        skillMeter.max = 20;
+        skillMeter.value = player.fireRing ? 20 - player.ringCooldown : 0;
+        skillMeter.className = "skill-meter" + (player.ringTime > 0 ? " active" : "");
+    }
+    const skillStatus = document.getElementById("skill-status");
+    if (skillStatus) skillStatus.textContent = !player.fireRing ? (player.stormSpark ? "Storm Spark · passive" : "No skill equipped") :
+        player.ringTime > 0 ? "Fire Ring · active " + player.ringTime.toFixed(1) + "s" :
+        player.ringCooldown > 0 ? "Fire Ring · " + Math.ceil(player.ringCooldown) + "s" : "Fire Ring · ready on hit";
     if (healthMeter) {
         healthMeter.max = player.maxHealth;
         healthMeter.value = player.health;
@@ -532,18 +606,29 @@ class Dungeon {
 
     nextLevel() {
         this.floor++;
+        this.shopPurchased = false;
+        this.perkOffer = Math.random() < 0.5 ? "storm" : "fire";
         difficulty = 1 + (this.floor - 1) * 0.12;
         const newRoom = new Room(25, 12, 40);
         newRoom.doors.push(new Door(960, 200));
+        if (this.floor === 1) createLanternPuzzle(newRoom);
+        // Reserve the arrival before placing enemies, rather than hoping for an empty random tile.
+        this.spawn = this.floor === 1 ? { x: 45, y: 125 } : newRoom.getSafePos();
+        const enemySpawns = newRoom.tiles.filter(tile => tile.walkable).map(tile =>
+            ({ x: tile.x + 5, y: tile.y + 5 })).filter(pos =>
+            dist({ x: this.spawn.x + 12.5, y: this.spawn.y + 10 }, { x: pos.x + 17.5, y: pos.y + 15 }) >= 280);
 
-        for (let i = 0; i < 4; i++) {
-            const pos = newRoom.getSafePos();
-            const element = ["goo", "fire", "water", ["goo", "fire", "water"][Math.floor(Math.random() * 3)]][i];
+        const enemyCount = Math.min(12, 4 + Math.floor((this.floor - 1) / 2));
+        for (let i = 0; i < enemyCount; i++) {
+            const pos = enemySpawns[Math.floor(Math.random() * enemySpawns.length)];
+            const element = i < 3 ? ["goo", "fire", "water"][i] : ["goo", "fire", "water"][Math.floor(Math.random() * 3)];
             newRoom.entities.push(new Enemy(pos.x, pos.y, element));
         }
 
+        const itemSpawns = newRoom.tiles.filter(tile => tile.walkable &&
+            (this.floor !== 1 || tile.x >= 240 || tile.y >= 160)).map(tile => ({ x: tile.x + 5, y: tile.y + 5 }));
         for (let i = 0; i < 3; i++) {
-            const itemPos = newRoom.getSafePos();
+            const itemPos = itemSpawns[Math.floor(Math.random() * itemSpawns.length)];
             const rand = Math.random();
             let type;
             if (rand < 0.4) type = "health";
@@ -553,10 +638,14 @@ class Dungeon {
 
             newRoom.entities.push(new Item(itemPos.x, itemPos.y, type));
         }
+        for (let i = 0; i < 2; i++) {
+            const pos = itemSpawns[Math.floor(Math.random() * itemSpawns.length)];
+            newRoom.entities.push(new Item(pos.x, pos.y, "arrows"));
+        }
 
         this.currentRoom = newRoom;
         if (player) {
-            const newPos = this.currentRoom.getSafePos();
+            const newPos = this.spawn;
             player.pos.x = newPos.x;
             player.pos.y = newPos.y;
         }
@@ -584,6 +673,81 @@ class Entity {
 
 /* ================= ITEMS ================= */
 
+function createLanternPuzzle(room) {
+    // A hand-authored alcove joins the maze's guaranteed starting tile (1,1).
+    for (let y = 1; y <= 3; y++) {
+        for (let x = 1; x <= 5; x++) room.getTile(x, y).walkable = true;
+    }
+    room.terrain = null;
+    const order = [0, 1, 2];
+    for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+    }
+    room.puzzle = { order, progress: 0, solved: false, errorUntil: 0, message: "Discover the order. Wrong choices reset the lanterns." };
+    for (let i = 0; i < 3; i++) room.entities.push(new Lantern(48 + i * 80, 88, i));
+    room.entities.push(new LanternNiche(208, 128));
+}
+
+function interactLantern() {
+    const room = dungeon.room;
+    if (!room.puzzle || room.puzzle.solved) return;
+    const lantern = room.entities.filter(entity => entity instanceof Lantern &&
+        dist(center(player), center(entity)) <= 45 && room.hasLineOfSight(center(player), center(entity)))
+        .sort((a, b) => dist(center(player), center(a)) - dist(center(player), center(b)))[0];
+    if (!lantern) { updateUI("Move beside a lantern and press E."); return; }
+    const puzzle = room.puzzle;
+    if (puzzle.order[puzzle.progress] !== lantern.index) {
+        puzzle.progress = 0;
+        puzzle.errorUntil = runTime + 0.7;
+        puzzle.message = "Wrong lantern. Sequence reset.";
+    } else {
+        puzzle.progress++;
+        puzzle.message = "Lantern " + ["I", "II", "III"][lantern.index] + " lit.";
+        if (puzzle.progress === 3) {
+            puzzle.solved = true;
+            room.entities.push(new Item(208, 128, "lantern-heart"));
+            puzzle.message = "The niche opens! Collect the Lantern Heart.";
+        }
+    }
+    updateUI(puzzle.message);
+}
+
+class Lantern extends Entity {
+    constructor(x, y, index) { super(x, y, 24, 28, "#b78a48"); this.index = index; }
+    draw() {
+        const puzzle = dungeon.room.puzzle;
+        const lit = puzzle.order.slice(0, puzzle.progress).includes(this.index);
+        const error = puzzle.errorUntil > runTime;
+        c.save();
+        c.fillStyle = "#39484b"; c.fillRect(this.pos.x - 3, this.pos.y + 23, 30, 5);
+        c.fillStyle = "#b78a48"; c.fillRect(this.pos.x + 3, this.pos.y + 2, 18, 22);
+        c.fillStyle = error ? (Math.floor((puzzle.errorUntil - runTime) * 10) % 2 ? "#ff4141" : "#9e2525") : lit ? "#ffe89c" : "#493b2b";
+        if (lit || error) { c.shadowColor = error ? "#ff3030" : "#ffb34f"; c.shadowBlur = 18; }
+        c.fillRect(this.pos.x + 7, this.pos.y + 6, 10, 14);
+        c.shadowBlur = 0;
+        c.fillStyle = "#fff0c8"; c.font = "bold 12px monospace"; c.textAlign = "center";
+        c.fillText(["I", "II", "III"][this.index], this.pos.x + 12, this.pos.y - 5);
+        if (this.index === 1) {
+            c.fillStyle = "#172124"; c.fillRect(43, 42, 194, 24);
+            c.fillStyle = "#ffe1a0"; c.fillText("LANTERN ORDER", 140, 58);
+        }
+        c.restore();
+    }
+}
+
+class LanternNiche extends Entity {
+    constructor(x, y) { super(x, y, 26, 28, "#536267"); }
+    draw() {
+        c.fillStyle = "#536267"; c.fillRect(this.pos.x - 3, this.pos.y - 3, 30, 30);
+        c.fillStyle = "#142125"; c.fillRect(this.pos.x, this.pos.y, 24, 24);
+        if (!dungeon.room.puzzle.solved) {
+            c.fillStyle = "#9c824e";
+            for (let i = 0; i < 3; i++) c.fillRect(this.pos.x + 3 + i * 8, this.pos.y, 2, 24);
+        }
+    }
+}
+
 class Item extends Entity {
     constructor(x, y, type) {
         super(x, y, 24, 24, "transparent");
@@ -595,13 +759,28 @@ class Item extends Entity {
         const ox = this.pos.x;
         const oy = this.pos.y;
 
-        if (this.type === "health") {
+        if (this.type === "lantern-heart") {
+            c.fillStyle = "#ffb765";
+            c.fillRect(ox + 3, oy + 4, 8, 10); c.fillRect(ox + 13, oy + 4, 8, 10);
+            c.fillRect(ox + 6, oy + 9, 12, 10); c.fillRect(ox + 10, oy + 19, 4, 3);
+            c.fillStyle = "#fff1b3"; c.fillRect(ox + 6, oy + 6, 3, 4);
+        } else if (this.type === "coin") {
+            c.fillStyle = "#efbb46";
+            c.fillRect(ox + 6, oy + 5, 12, 14);
+            c.fillStyle = "#ffe9a0";
+            c.fillRect(ox + 9, oy + 7, 3, 10);
+        } else if (this.type === "health" || this.type === "small-health") {
             c.fillStyle = "#8B4513"; c.fillRect(ox + 3 * px, oy, 2 * px, px);
             c.fillStyle = "#ADD8E6"; c.fillRect(ox + 2 * px, oy + px, 4 * px, px);
             c.fillStyle = "#F0F8FF"; c.fillRect(ox + px, oy + 2 * px, 6 * px, 6 * px);
             c.fillStyle = "#FF0000";
             c.fillRect(ox + 2 * px, oy + 4 * px, 4 * px, 3 * px);
             c.fillRect(ox + 3 * px, oy + 3 * px, 2 * px, px);
+            if (this.type === "small-health") {
+                c.fillStyle = "#fff0c5";
+                c.font = "bold 10px monospace";
+                c.fillText("+5", ox + 4, oy - 2);
+            }
         } else if (this.type === "bow") {
 
             // 0. Draw the Bowstring
@@ -635,6 +814,14 @@ class Item extends Entity {
             ];
             arrow.forEach(([x, y]) => c.fillRect(ox + x * px, oy + y * px, px, px));
 
+        } else if (this.type === "arrows") {
+            for (let i = 0; i < 3; i++) {
+                const x = ox + 4 + i * 7;
+                c.fillStyle = "#aa7845"; c.fillRect(x, oy + 5, 2, 17);
+                c.fillStyle = "#d8ffff"; c.fillRect(x - 2, oy + 3, 6, 4);
+                c.fillRect(x - 1, oy + 1, 4, 2);
+                c.fillStyle = "#60b9ad"; c.fillRect(x - 2, oy + 18, 6, 4);
+            }
         } else if (this.type === "speed") {
             // Speed boost visualization
             c.fillStyle = "purple";
@@ -645,10 +832,18 @@ class Item extends Entity {
     }
 
     update(deltaTime) {
+        if (this.dead) return;
         if (player.health <= 0) { this.draw(); return; }
         if (dist(this.pos, player.pos) < 30) {
-            if (this.type === "health" && player.health < player.maxHealth) {
-                player.health = Math.min(player.maxHealth, player.health + 50);
+            if (this.type === "small-health" && player.health >= player.maxHealth) { this.draw(); return; }
+            if (this.type === "lantern-heart") {
+                player.lanternHeart = true;
+                updateUI("Lantern Heart: every kill restores 5 HP for this run!");
+            } else if (this.type === "coin") {
+                goldCollected += this.amount || 3;
+                updateUI("Collected coins!");
+            } else if ((this.type === "health" || this.type === "small-health") && player.health < player.maxHealth) {
+                player.health = Math.min(player.maxHealth, player.health + (this.type === "health" ? 25 : 5));
                 updateUI("Picked up Health Potion");
             } else if (this.type === "bow") {
                 hasBow = player.inventory.weapons.some(w => w instanceof Bow);
@@ -656,9 +851,13 @@ class Item extends Entity {
                     const bow = new Bow();
                     bow.damage += player.damageBonus;
                     player.inventory.weapons.push(bow);
-                    updateUI("Picked up a Bow!");
+                    player.ammo += 8;
+                    updateUI("Picked up a Bow and 8 arrows! Q switches weapons.");
                     hasBow = true;
                 }
+            } else if (this.type === "arrows") {
+                player.ammo += 6;
+                updateUI("Picked up 6 arrows!");
             } else if (this.type === "speed") {
                 player.speed += 0.4;
                 updateUI("Speed Increased!");
@@ -712,7 +911,13 @@ class Living extends Entity {
 /* ================= WEAPONS & PROJECTILES ================= */
 
 function strikeEnemy(enemy, damage) {
-    if (!enemy.onHit(damage) || !player.stormSpark) return;
+    if (!enemy.onHit(damage)) return;
+    if (player.fireRing && player.ringCooldown <= 0) {
+        player.ringTime = 5;
+        player.ringCooldown = 20;
+        player.ringPulse = 0;
+    }
+    if (!player.stormSpark) return;
     const origin = center(enemy);
     const nearby = dungeon.room.entities.filter(target => target instanceof Enemy && target !== enemy && !target.dead &&
         dist(origin, center(target)) <= 90 && dungeon.room.hasLineOfSight(origin, center(target)))
@@ -745,6 +950,12 @@ class Sword {
 class Bow {
     constructor() { this.name = "Bow"; this.damage = 20; this.range = 300; }
     attack(owner, room, direction = owner.dir) {
+        if (owner.ammo <= 0) {
+            updateUI("Out of arrows. Collect a bundle or press Q for the sword.");
+            return;
+        }
+        owner.ammo--;
+        updateStats();
         const origin = center(owner);
         arrows.push(new Arrow(origin.x, origin.y, direction, this.damage, this.range));
     }
@@ -809,8 +1020,14 @@ class Player extends Living {
     constructor(x, y) {
         super(x, y, 25, 20, "deepskyblue");
         this.inventory = { weapons: [new Sword()], index: 0 };
+        this.ammo = 0;
         this.damageBonus = 0;
         this.stormSpark = false;
+        this.lanternHeart = false;
+        this.fireRing = false;
+        this.ringTime = 0;
+        this.ringCooldown = 0;
+        this.ringPulse = 0;
         this.dir = { x: 1, y: 0 };
         this.speedModifier = 1;
         this.speed = 4;
@@ -829,8 +1046,8 @@ class Player extends Living {
     get weapon() { return this.inventory.weapons[this.inventory.index]; }
 
     movement(deltaTime) {
-        let dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-        let dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+        let dx = (inputDown("right") ? 1 : 0) - (inputDown("left") ? 1 : 0);
+        let dy = (inputDown("down") ? 1 : 0) - (inputDown("up") ? 1 : 0);
         let mag = Math.hypot(dx, dy) || 1;
         dx /= mag; dy /= mag;
 
@@ -873,6 +1090,27 @@ class Player extends Living {
     }
 
     drawSwing() {
+        if (this.ringTime > 0) {
+            const origin = center(this);
+            c.save();
+            c.strokeStyle = "#ff933e";
+            c.shadowColor = "#ff4d20";
+            c.shadowBlur = 18;
+            c.lineWidth = 6;
+            c.beginPath();
+            c.arc(origin.x, origin.y, 70, 0, Math.PI * 2);
+            c.fillStyle = "rgba(255,100,25,0.12)";
+            c.fill();
+            c.stroke();
+            for (let i = 0; i < 16; i++) {
+                const angle = i * Math.PI / 8 + runTime * 1.6;
+                const radius = 70 + Math.sin(runTime * 12 + i) * 4;
+                c.fillStyle = i % 2 ? "#ffe59c" : "#ff572b";
+                c.fillRect(origin.x + Math.cos(angle) * radius - 3,
+                    origin.y + Math.sin(angle) * radius - 5, 5, 9);
+            }
+            c.restore();
+        }
         if (!this.swing || this.swing.remaining <= 0) return;
         const { angle, remaining, duration, range } = this.swing;
         const progress = 1 - remaining / duration;
@@ -917,10 +1155,23 @@ class Player extends Living {
         }
 
         this.tickFeedback(deltaTime);
+        this.ringCooldown = Math.max(0, this.ringCooldown - deltaTime);
+        if (this.ringTime > 0) {
+            this.ringTime = Math.max(0, this.ringTime - deltaTime);
+            this.ringPulse -= deltaTime;
+            if (this.ringTime > 0 && this.ringPulse <= 0) {
+                this.ringPulse = 0.5;
+                dungeon.room.entities.slice().forEach(enemy => {
+                    if (enemy instanceof Enemy && !enemy.dead && dist(center(this), center(enemy)) <= 70 &&
+                        dungeon.room.hasLineOfSight(center(this), center(enemy))) enemy.onHit(8);
+                });
+            }
+        }
         this.fireCooldown = Math.max(0, this.fireCooldown - deltaTime);
         this.invulnerable = Math.max(0, this.invulnerable - deltaTime);
         if (this.swing) this.swing.remaining = Math.max(0, this.swing.remaining - deltaTime);
         this.movement(deltaTime);
+        if (keys.interact) { keys.interact = false; interactLantern(); }
 
         if (keys.switch) {
             this.inventory.index = (this.inventory.index + 1) % this.inventory.weapons.length;
@@ -929,19 +1180,14 @@ class Player extends Living {
         }
 
         this.cooldown = Math.max(0, this.cooldown - deltaTime);
-        const aim = { x: (keys.aimRight ? 1 : 0) - (keys.aimLeft ? 1 : 0),
-            y: (keys.aimDown ? 1 : 0) - (keys.aimUp ? 1 : 0) };
+        const aim = { x: (inputDown("aimRight") ? 1 : 0) - (inputDown("aimLeft") ? 1 : 0),
+            y: (inputDown("aimDown") ? 1 : 0) - (inputDown("aimUp") ? 1 : 0) };
         const aiming = aim.x !== 0 || aim.y !== 0;
-        const bowIndex = this.inventory.weapons.findIndex(weapon => weapon instanceof Bow);
-        if (aiming && bowIndex >= 0) {
-            if (this.inventory.index !== bowIndex) {
-                this.inventory.index = bowIndex;
-                updateUI("Bow ready. WASD to move, arrow keys to aim and fire.");
-            }
+        if (aiming) {
             const length = Math.hypot(aim.x, aim.y);
             this.dir = { x: aim.x / length, y: aim.y / length };
         }
-        if (this.cooldown <= 0 && (keys.attack || (aiming && bowIndex >= 0))) {
+        if (this.cooldown <= 0 && (keys.attack || aiming)) {
             this.weapon.attack(this, dungeon.room);
             this.cooldown = 0.4;
         }
@@ -977,6 +1223,11 @@ class Enemy extends Living {
     destroy() {
         if (!this.dead) {
             enemiesSlain++;
+            if (player.lanternHeart && player.health > 0) player.health = Math.min(player.maxHealth, player.health + 5);
+            const coin = new Item(this.pos.x, this.pos.y, "coin");
+            coin.amount = 3 + Math.floor(Math.random() * 4);
+            dungeon.room.entities.push(coin);
+            if (Math.random() < 0.25) dungeon.room.entities.push(new Item(this.pos.x + 10, this.pos.y, "small-health"));
             if (this.element !== "goo") spawnHazard(dungeon.room, center(this), this.element);
             updateUI(SLIME_TYPES[this.element].name + " slime defeated!");
         }
@@ -985,6 +1236,22 @@ class Enemy extends Living {
 
     draw() {
         c.save();
+        if (!this.dead && player.ringTime > 0 && dist(center(player), center(this)) <= 70 &&
+            dungeon.room.hasLineOfSight(center(player), center(this))) {
+            const origin = center(this);
+            c.strokeStyle = "#ff9944";
+            c.lineWidth = 2;
+            c.strokeRect(this.pos.x - 3, this.pos.y - 3, this.width + 6, this.height + 6);
+            c.fillStyle = "#ff6d2d";
+            c.beginPath();
+            c.moveTo(origin.x, this.pos.y - 20);
+            c.lineTo(origin.x - 6, this.pos.y - 8);
+            c.lineTo(origin.x + 6, this.pos.y - 8);
+            c.closePath();
+            c.fill();
+            c.fillStyle = "#ffe6a0";
+            c.fillRect(origin.x - 2, this.pos.y - 12, 4, 5);
+        }
         if (this.windingUp || this.strikeFlash > 0) {
             const origin = center(this);
             c.beginPath();
@@ -1113,12 +1380,25 @@ class GooShot extends Entity {
         this.vel = { x: dir.x * 3, y: dir.y * 3 };
     }
     update(deltaTime) {
-        const before = { ...this.pos };
-        this.pos.x += this.vel.x * deltaTime * 60;
-        this.pos.y += this.vel.y * deltaTime * 60;
-        if (!dungeon.room.isWalkable(this.pos.x, this.pos.y, this.width, this.height)) {
-            spawnHazard(dungeon.room, before, this.element);
-            this.destroy();
+        if (this.dead) return;
+        const dx = this.vel.x * deltaTime * 60, dy = this.vel.y * deltaTime * 60;
+        const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 4));
+        for (let i = 0; i < steps; i++) {
+            const before = { ...this.pos };
+            this.pos.x += dx / steps;
+            this.pos.y += dy / steps;
+            if (!dungeon.room.isWalkable(this.pos.x, this.pos.y, this.width, this.height)) {
+                spawnHazard(dungeon.room, before, this.element);
+                this.destroy();
+                break;
+            }
+            if (this.pos.x < player.pos.x + player.width && this.pos.x + this.width > player.pos.x &&
+                this.pos.y < player.pos.y + player.height && this.pos.y + this.height > player.pos.y) {
+                player.onHit(6);
+                spawnHazard(dungeon.room, center(this), this.element);
+                this.destroy();
+                break;
+            }
         }
         this.draw();
     }
@@ -1251,7 +1531,8 @@ class Door {
 const SHOP_OFFERS = {
     vitality: { cost: 25, name: "Heartstone" },
     damage: { cost: 50, name: "Honed Steel" },
-    storm: { cost: 150, name: "Storm Spark" }
+    storm: { cost: 150, name: "Storm Spark" },
+    fire: { cost: 150, name: "Fire Ring" }
 };
 
 function updateShop() {
@@ -1259,9 +1540,11 @@ function updateShop() {
     document.getElementById("shop-floor").textContent = "FLOOR " + dungeon.floor + " → " + (dungeon.floor + 1);
     for (const [id, offer] of Object.entries(SHOP_OFFERS)) {
         const button = document.getElementById("buy-" + id);
-        const owned = id === "storm" && player.stormSpark;
-        button.disabled = owned || goldCollected - goldSpent < offer.cost;
-        button.textContent = owned ? "OWNED" : "BUY · " + offer.cost + " GOLD";
+        const owned = (id === "storm" && player.stormSpark) || (id === "fire" && player.fireRing);
+        const available = !["storm", "fire"].includes(id) || dungeon.perkOffer === id;
+        if (["storm", "fire"].includes(id)) document.getElementById("offer-" + id).hidden = !available;
+        button.disabled = dungeon.shopPurchased || !available || owned || goldCollected - goldSpent < offer.cost;
+        button.textContent = owned ? "OWNED" : dungeon.shopPurchased ? "PURCHASE USED" : "BUY · " + offer.cost + " GOLD";
     }
 }
 
@@ -1270,22 +1553,26 @@ function openFloorShop() {
     shopOpen = true;
     resetKeys();
     updateShop();
-    document.getElementById("shop-message").textContent = "Run upgrades last until defeat. Health refills when you descend.";
+    document.getElementById("shop-message").textContent = "One upgrade per floor. Descending restores 30 HP.";
     document.getElementById("floor-shop").showModal();
 }
 
 function buyUpgrade(id) {
     const offer = Object.hasOwn(SHOP_OFFERS, id) ? SHOP_OFFERS[id] : null;
-    if (!shopOpen || !offer || goldCollected - goldSpent < offer.cost || (id === "storm" && player.stormSpark)) return false;
+    if (!shopOpen || dungeon.shopPurchased || !offer || goldCollected - goldSpent < offer.cost ||
+        (["storm", "fire"].includes(id) && dungeon.perkOffer !== id) ||
+        (id === "storm" && player.stormSpark) || (id === "fire" && player.fireRing)) return false;
     goldSpent += offer.cost;
-    if (id === "vitality") player.maxHealth += 10;
+    dungeon.shopPurchased = true;
+    if (id === "vitality") player.maxHealth += 5;
     if (id === "damage") {
         player.damageBonus += 5;
         player.inventory.weapons.forEach(weapon => weapon.damage += 5);
     }
     if (id === "storm") player.stormSpark = true;
+    if (id === "fire") player.fireRing = true;
     document.getElementById("shop-message").textContent = offer.name + " acquired! " +
-        (id === "vitality" ? "Maximum health: " + player.maxHealth : id === "damage" ? "All weapon damage increased by 5." : "Your weapon hits now spark to a nearby slime.");
+        "Your purchase for this floor is used. Descend or return to explore.";
     updateShop();
     updateUI();
     return true;
@@ -1317,7 +1604,10 @@ function leaveFloor() {
     player.slowed = false;
     player.speedModifier = 1;
     player.fireCooldown = 0;
-    player.health = player.maxHealth;
+    player.health = Math.min(player.maxHealth, player.health + 30);
+    player.ringTime = 0;
+    player.ringCooldown = 0;
+    player.ringPulse = 0;
     updateUI("Entering floor " + dungeon.floor + ". Slimes are stronger here.");
 }
 
@@ -1343,7 +1633,7 @@ function initGame() {
     lastTime = performance.now();
     player = null;
     dungeon = new Dungeon();
-    const start = dungeon.currentRoom.getSafePos();
+    const start = dungeon.spawn;
     player = new Player(start.x, start.y);
     updateUI("Explore, fight, or find the next floor.");
     updateLeaderboardUI();
@@ -1386,6 +1676,13 @@ function animate(time = performance.now()) {
         c.restore();
     }
     drawEffects(isGameOver || shopOpen ? 0 : deltaTime);
+    const viewport = document.getElementById("game-viewport");
+    if (viewport?.clientWidth > 0 && (canvas.clientWidth > viewport.clientWidth || canvas.clientHeight > viewport.clientHeight)) {
+        const scale = canvas.clientWidth / canvas.width;
+        const focus = center(player);
+        viewport.scrollLeft = focus.x * scale - viewport.clientWidth / 2;
+        viewport.scrollTop = focus.y * scale - viewport.clientHeight / 2;
+    }
     updateStats();
     requestAnimationFrame(animate);
 }

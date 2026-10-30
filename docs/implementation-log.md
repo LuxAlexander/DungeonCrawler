@@ -1,6 +1,6 @@
 # Implementation log
 
-Record completed work and actual validation here. Design approval alone is not implementation. Commit/merge/deployment status is separate from whether files have been changed.
+Record completed work and actual validation here. This is a chronological history: values and limitations in old entries describe that stage, not necessarily the current game. See README/AGENTS for current behavior and decision supersession notes for changes. Design approval alone is not implementation. Commit/merge/deployment status is separate from whether files have been changed.
 
 ## 2026-10-28 — Repository consolidation
 
@@ -100,6 +100,96 @@ Record completed work and actual validation here. Design approval alone is not i
 **Verification:** 52 Node tests pass, including shop pause, affordability/stacking/unique purchase, invalid offer rejection, bow upgrade inheritance, nonrecursive/wall-blocked chaining, return/rearm, zero-gold skip, max-health refill, and restart resets. Isolated headless Edge exercised actual purchase buttons, descent, and Escape: all three purchases spent225, preserved225 earned, yielded110 HP/30 sword damage/Storm Spark, and carried upgrades to floor2. Shop at768px and390px had no horizontal overflow or browser errors. Desktop/phone screenshots were visually inspected; mobile shop scrolls vertically. Real API traffic was blocked.
 
 **Limitations:** Upgrade economy and chaining strength need run-length playtesting. Puzzle interactions/rooms/rewards remain proposals. No commits, pushes, or deployments were made.
+
+## 2026-10-30 — Bow ammunition and equipped directional combat
+
+**Status:** Implemented, uncommitted; related D-013.
+
+- Bow base damage reduced from 20 to 12; first bow grants 8 arrows, each floor adds two 6-arrow bundles alongside the original random pickups. Shots spend one arrow; no ammo means no projectile. Ammo survives floors and resets with the run. Sidebar displays remaining arrows.
+- Arrow keys attack in the chosen direction with the equipped weapon, including diagonal sword swings. Q switches; automatic bow selection removed.
+- Enemy count grows from four by one every two floors, capped at twelve. Element variety, existing stat scaling, and optional exits remain.
+- Updated controls, README, maintenance notes, and regression expectations.
+
+**Verification:** Frontend/backend syntax checks passed. All 55 offline Node tests passed, including ammunition exhaustion, pickup once-only behavior, retry/floor persistence, sword direction despite movement and bow ownership, and population/element/ammo distribution through floor 21. No real API writes.
+
+**Limitations:** No browser playtest or visual verification in this session. Longer-run ammo economy and crowd difficulty need player testing. No commits or deployments.
+
+## 2026-10-30 — Healing, enemy loot, shop limits, Fire Ring, and projectile damage
+
+**Status:** Implemented, uncommitted; related D-014.
+
+- Reduced descent healing to 15, Heartstone maximum HP to 5, and floor potions to 25. Enemy deaths drop 3–6 coins and a 25%-chance 5-HP potion; drops award once and count coins as earned gold. Small potions wait at full health.
+- One purchase per floor persists across shop reopening. A fixed-per-floor random special slot offers Storm Spark or new Fire Ring; unavailable offers are hidden and rejected by purchase logic.
+- Fire Ring triggers on weapon hits for five seconds, burns visible nearby enemies in half-second pulses, pauses with simulation, cannot chain, and clears on descent/retry. Flame motes surround the ring. Stats show both owned perks.
+- All slime projectile types deal 6 contact damage using swept collision, stop at first wall/player, and respect invulnerability. Original elemental wall-impact patches remain.
+
+**Verification:** All 59 offline Node regression tests passed; frontend/backend syntax and diff whitespace checks passed. Coverage includes persistent purchase/offer state, partial/capped healing, across-floor damage upgrades, loot once-only collection, full-health small potions, all projectile elements/walls/invulnerability, and ring duration/pulses/walls/pause/reset. No real API requests or writes in tests.
+
+**Limitations:** Browser visuals and gameplay balance not verified this session. No commits or deployments.
+
+## 2026-10-30 — Arrow damage, Fire Ring visibility and skill bar, impact patches
+
+**Status:** Implemented, uncommitted; related D-015.
+
+- Raised bow base damage from12 to20, including the existing upgrade inheritance. Ammo unchanged.
+- Fire Ring remains area damage to every in-range visible enemy; added a translucent fill and flame/outline marks on slimes within the damaging area. Increased trigger cooldown from12 to20 seconds.
+- Added skill status/recharge progress under vitality, showing active seconds, cooldown, ready-on-hit, no perk, or passive Storm Spark. Simulation pause and existing run/floor reset behavior remain.
+- Slime shots now spawn their elemental ground patch on player contact as well as walls, even during invulnerability. Existing deduplication and six-second lifetime apply.
+
+**Verification:** All62 offline regression tests passed, covering multi-target area damage, mark rendering calls and wall exclusion, skill states/reset, new damage and upgrade expectations, and player-impact patches for all three elements during invulnerability. Frontend/backend syntax checks and diff whitespace check passed. No real API writes.
+
+**Limitations:** Browser visual inspection and subjective balance not performed in this session. No commits or deployments.
+
+## 2026-10-30 — Reserved arrivals and floor-one Lantern Order
+
+**Status:** Implemented, uncommitted; related D-016, P-001, I-018.
+
+- Reserve player arrival before enemy placement and filter enemy candidates to >=280px center distance on every floor. Initial/retry Player uses the same reserved position. Descent heals30 HP, capped at maximum.
+- Carve a small connected entrance alcove on floor one. Three numbered lanterns, plaque and persistent HUD clue/progress support E-key interaction. Wrong order resets only the sequence; completion opens one reward niche. Random pickups stay outside the alcove.
+- Lantern Heart item grants5 HP per enemy kill, capped at max, no revival, once per death. Ownership persists across floors and resets on retry. No exit gating or later-floor puzzles added.
+- Browser checks exposed quick E taps being lost between frames; interaction is now queued until consumed, with held-key repeats ignored. Blur/shop/death reset remains.
+
+**Verification:** All65 offline regression tests passed. New coverage spans20 seeded runs through12 floors for >=280px enemy separation, walkable spawns, reachable lanterns, wrong sequence, tap/hold handling, reward uniqueness/collection, free exit, ownership persistence/reset, and capped/nonreviving kill healing. Frontend/backend syntax and whitespace checks passed. Isolated headless Edge verified real keyboard E solve, single reward pickup, healing60→65 after a kill, descent40→70, and safe floor-two spawn (~345px nearest enemy in that seed). Desktop/tablet/phone screenshots at1536/768/390px widths had no horizontal overflow; desktop/phone screenshots visually inspected. No browser errors; API blocked. Browser/server closed after checks.
+
+**Limitations:** Long-run healing economy and subjective gameplay feel still need owner playtesting. No commits/deployments. Browser check script/screenshots live outside the repository in the session visualization folder.
+
+## 2026-10-30 — Hidden random lantern sequence and mistake feedback
+
+**Status:** Implemented, uncommitted; related D-017.
+
+- Fisher–Yates shuffle selects a permutation once when floor-one puzzle is created. Attempts and shop reopening keep it fixed; a new run reshuffles (repeats across runs are possible).
+- Removed solution from canvas plaque, HUD, and mistake text. Wrong input clears progress and sets a0.7-second simulation-time deadline; all lanterns pulse bright/dark red with glow. Correctly lit lanterns and the one-time reward remain.
+
+**Verification:**66 offline regression tests passed, including permutation/variation, unchanged order on mistakes, absent solution text, flash timing/pause, and prior solve/reward checks. Frontend/backend parsing and whitespace checks passed. Isolated Edge verified wrong E input, randomized correct sequence, reward/heal/descent and responsive layouts with API blocked; no browser errors. Red-flash screenshot visually inspected. Browser/server closed.
+
+**Limitations:** Subjective puzzle difficulty still needs player testing. No commits or deployment.
+
+
+## 2026-10-30 — Documentation consolidation
+
+**Status:** Documentation updated locally; uncommitted. No runtime changes in this pass.
+
+- Consolidated AGENTS into current maintenance facts, replacing contradictory gameplay snapshots while retaining workflows, contracts, invariants, and pitfalls.
+- Aligned README, ideas, and puzzle status with equipped directional combat, ammo, growing enemy counts, 30-HP descent healing, loot, one-purchase shops, Fire Ring, safe arrivals, and hidden randomized Lantern Order.
+- Corrected the decision date introduction and added explicit supersession notes. Updated the docs index and distinguished chronological implementation history from current behavior.
+- Clarified the shared API base URL, ordinary versus small potions, current room dimensions, and local implementation versus deployment status.
+
+**Verification:** Cross-checked current descriptions against frontend source, checked local Markdown links and whitespace. Documentation-only pass; gameplay tests were not rerun. The last gameplay run passed 66 offline tests and the recorded browser checks.
+
+**Limitations:** No deployment or remote-service verification; balance still needs playtesting.
+
+## 2026-10-30 — Touch controls and mobile game view
+
+**Status:** Implemented, uncommitted; related D-018, I-019.
+
+- Added independent move/aim thumb pads with eight-way direction, deadzone, pointer capture/cancellation, and multi-finger support. Tap buttons switch weapons and interact with lanterns; weapon/ammo label updates live. Existing keyboard controls/cooldowns remain.
+- Reset held touch state/capture on blur, hidden page, shop, death, and retry. Prevent scrolling only on pads/canvas; preserve page scrolling and zoom outside controls. Shop/game-over taps use large targets.
+- Touch devices show controls automatically. At <=1100px width, compact HUD/view/controls fill screen in portrait/landscape; enlarged dungeon follows player in both axes. Side panels remain below and touch controls do not cover the playfield. Desktop retains full-room layout.
+- Updated README, maintenance guide, decision, idea, puzzle input, and docs index.
+
+**Verification:** All69 offline Node tests passed, including independent two-pointer input, cancellation/release, deadzone, pointer ownership, keyboard coexistence, touch actions, and shop/retry cleanup. Frontend/backend syntax and whitespace/link checks passed. Isolated headless Edge with touch/mobile emulation and real multi-finger touch events verified movement + directional sword attack, bow firing/ammo, switch and lantern taps, camera tracking near room edges, shop return, retry, and layouts320x568/390x844 portrait,844x390 landscape,768x1024 tablet. No horizontal overflow or controls outside viewport. Desktop controls hidden as intended. Portrait and landscape viewport screenshots visually inspected. Score API blocked; no browser errors, submissions, database, or deployment changes. Temporary browser/server closed.
+
+**Limitations:** Physical Android/iPhone performance, thumb comfort, and Safari behavior remain untested. Browser script/screenshots are outside repository in the session visualization folder. No commits/deployments.
 
 ## Entry format for future work
 

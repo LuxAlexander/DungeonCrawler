@@ -1,6 +1,6 @@
 # DungeonCrawler
 
-A keyboard-controlled dungeon survival game by Alexander Lux, built with plain JavaScript and HTML Canvas. Explore randomly generated labyrinths as a penguin, fight slimes, collect upgrades, and save your score locally or submit it online. A portfolio project for practicing programming and AI-assisted development.
+A keyboard- and touch-controlled dungeon survival game by Alexander Lux, built with plain JavaScript and HTML Canvas. Explore randomly generated labyrinths as a penguin, fight slimes, collect upgrades, and save your score locally or submit it online. A portfolio project for practicing programming and AI-assisted development.
 
 - [Live demo](https://alexanderlux.netlify.app)
 - [Source repository](https://github.com/LuxAlexander/DungeonCrawler)
@@ -25,24 +25,36 @@ Gameplay runs locally without a backend. No separate local backend or developmen
 | Key | Action |
 | --- | --- |
 | W / A / S / D | Move (uppercase letters also work) |
-| Arrow keys (hold) | Select and fire a collected bow in that direction |
-| Horizontal + vertical arrow | Fire diagonally (for example Up + Right) |
+| Arrow keys (hold) | Attack with the equipped weapon in that direction |
+| Horizontal + vertical arrow | Attack diagonally (for example Up + Right) |
 | Space (hold) | Attack repeatedly |
 | Q | Cycle collected weapons |
+| E | Activate the nearest lantern within reach (floor-one puzzle) |
 | Retry | Start another run after game over |
 | Submit | Save the run locally, attempt online submission, then restart |
 
-The sword swings in a forward arc. Arrow keys aim and fire the bow independently of WASD movement; you must collect a bow first. Space also attacks with the equipped weapon in the last movement/aim direction, initially right. There are no touch controls.
+The sword swings in a forward arc. Arrow keys aim and attack with the equipped sword or bow independently of WASD movement. Q switches weapons; arrows never auto-select the bow. Space also attacks with the equipped weapon in the last movement/aim direction, initially right. Touch controls appear automatically on devices with a coarse pointer, such as phones and tablets.
+
+## Play on a phone or tablet
+
+Open the game in a modern mobile browser. The **left thumb pad moves**; the **right pad aims and repeatedly attacks** with the equipped weapon. Drag diagonally for diagonal movement or attacks; release a pad to stop. Both pads work simultaneously. Tap **Switch weapon** to choose sword/bow; the weapon label includes remaining bow ammo. Tap **Interact · lantern** beside a lantern to activate it. Shop, retry, and score buttons support taps.
+
+On touch screens up to 1100px wide, a compact HUD, game view, and controls fit the screen in portrait or landscape. The enlarged dungeon view follows the player; scroll below the controls for run details and the leaderboard. Controls remain outside the game view so thumbs do not cover enemies. Landscape provides a wider view. Dragging the pads does not scroll the page; scrolling and browser zoom remain available outside them.
+
+Verification used emulated touch gestures in Edge, including simultaneous fingers, camera tracking, portrait/landscape layouts, and tap actions. Physical Android/iPhone comfort, performance, and Safari behavior still need device testing. Changes remain local and uncommitted; the live demo has not been updated.
 
 ## Gameplay
 
-- Each floor generates a maze with four slimes (at least one Moss, Ember, and Tide) and three random pickups. Slimes follow paths through corridors to pursue nearby players, roam when farther away, and shoot goo that creates slowing puddles on wall impact.
-- Slime melee attacks show an amber warning ring and exclamation mark for 0.4 seconds, then strike once for 12 damage if you remain in range. A red ring marks the strike; move away to dodge. Hits give the player 0.7 seconds of protection from further damage.
+- Player arrivals are reserved before enemy placement: every enemy starts at least 280 world pixels from the player, including on retry and descent.
+- Each floor generates a maze with four slimes initially (at least one Moss, Ember, and Tide), three random pickups, and two arrow bundles. Slimes follow paths through corridors, pursue nearby players, and roam when farther away. Their elemental shots create matching patches on wall or player impact.
+- Slime melee attacks show an amber warning ring and exclamation mark for 0.4 seconds, then strike once for 12 damage on floor one (+1 per deeper floor) if you remain in range. A red ring marks the strike; move away to dodge. Hits give the player 0.7 seconds of protection from further damage.
 - Damage flashes, floating numbers, and a red canvas border show successful hits.
+- Every defeated slime drops 3–6 coins and has a 25% chance to drop a small potion healing 5 HP. Collect loot by approaching it; small potions remain while health is full. Coins add to both purse and total earned gold.
+- Flying slime shots deal 6 damage on contact, disappear on impact, leave their matching ground patch even when hit protection blocks damage, and respect walls.
 - Start with 100 health and a sword. The sword deals 25 damage in a forward arc (walls block it) with an animated crescent trail; the collectible bow fires glowing, directional arrows dealing 20 damage with a 300-pixel range. Both share a 0.4-second attack cooldown.
-- Health pickups restore up to 50 health, speed pickups increase speed for the current run, and bow pickups add a ranged weapon. Pickups are automatic; health pickups are consumed even at full health.
+- Health pickups restore up to 25 health, speed pickups increase speed for the current run, and the first bow pickup adds a ranged weapon and 8 arrows. Each arrow bundle grants 6 arrows, collectible even before finding a bow. Every bow shot spends one arrow; empty bows cannot fire. Ammo persists between floors and resets on a new run; the sidebar shows the remaining arrows. Pickups are automatic; ordinary floor potions are consumed even at full health, while small enemy-drop potions wait until health is missing.
 - Clearing all enemies creates a chest. Approach it to collect 50 gold once per floor.
-- Reach the rune-lit stone-and-brass door on the right to open the optional floor shop. Buy upgrades, descend without buying, or return for missed loot. Descending restores full health. Clearing enemies and collecting the chest are not required to exit.
+- Reach the rune-lit stone-and-brass door on the right to open the optional floor shop. Buy upgrades, descend without buying, or return for missed loot. Descending restores 30 health, capped at maximum. Clearing enemies and collecting the chest are not required to exit.
 - Every deeper floor increases enemy health and melee damage, plus movement and shooting speed. Rushing without kills still increases difficulty; kills themselves do not. Score counts enemies slain; gold is tracked separately.
 - At zero health, enter a name of up to 10 characters and submit, or retry. Blank names become `Unknown`.
 
@@ -52,19 +64,22 @@ The glowing exit opens **The Wayfarer's Rest**, a paused shop before the next fl
 
 | Upgrade | Price | Effect |
 | --- | --- | --- |
-| Heartstone | 25 gold | +10 maximum health; stacks |
+| Heartstone | 25 gold | +5 maximum health; stacks across floors |
 | Honed Steel | 50 gold | +5 damage to sword and bow, including a bow collected later; stacks |
 | Storm Spark | 150 gold | Weapon hits chain to one visible slime within 90px for 50% damage; one per run |
+| Fire Ring | 150 gold | Weapon hits trigger a five-second ring, dealing 8 damage every 0.5 seconds to enemies within 70px and clear line of sight; 20-second trigger cooldown; one per run |
 
-Upgrades survive floor changes and reset on a new run. Descending refills health to the upgraded maximum. Storm Spark cannot chain through walls or recursively trigger itself. Prices/effects are initial balance choices.
+Upgrades survive floor changes and reset on a new run. Only one upgrade may be purchased per floor, including after returning and reopening the shop. Descending restores 30 health up to the upgraded maximum. Storm Spark cannot chain through walls or recursively trigger itself. The special slot randomly offers Storm Spark or Fire Ring each floor; it stays fixed on reopening. Both can be owned across floors. Fire Ring follows the player, affects every enemy inside its 70px radius with clear line of sight, and shows a filled orange area plus flame marks on affected slimes. The skill bar beneath vitality shows active time, recharge, or ready-on-hit state (and identifies Storm Spark as passive when it is the only perk). Fire Ring pauses in the shop, and its active effect clears on descent. Prices/effects are initial balance choices.
 
 The HUD **purse** is spendable gold. The side panel and leaderboard retain **total gold earned**, so buying upgrades does not reduce your recorded gold result. A cleared floor's chest still grants 50 gold.
 
-Optional puzzle concepts are recorded in [docs/puzzles.md](docs/puzzles.md). They are proposals, not implemented obstacles or rewards.
+## Lantern Order and Lantern Heart
+
+Floor one includes the optional **Lantern Order** puzzle in the entrance alcove. Discover the hidden order, randomized each new run. Move beside a numbered lantern and press **E**. Correct choices stay lit; a wrong choice resets the sequence and flashes all three lanterns red for 0.7 seconds. The order stays fixed during attempts, and no solution text or puzzle timer is shown. Solving it opens the nearby niche once: collect **Lantern Heart** to heal **5 HP per kill**, capped at maximum, for the rest of the run. It never revives a defeated player and resets on retry. The exit stays usable without solving the puzzle. Further puzzle concepts remain proposals in [docs/puzzles.md](docs/puzzles.md).
 
 ## Floor difficulty
 
-Floor 1 starts with 100 enemy health and 12 melee damage. Each deeper floor adds 12 health and 1 melee damage. Movement rises from 96 world pixels/second by 3.6 per floor, capped at 168. Goo/elemental shot intervals gradually shorten to 55% of their original duration. Enemy count stays four, the 0.4-second melee warning stays readable, and environmental fire still deals 8 damage per pulse. New runs reset the scaling.
+Floor 1 starts with 100 enemy health and 12 melee damage. Each deeper floor adds 12 health and 1 melee damage. Movement rises from 96 world pixels/second by 3.6 per floor, capped at 168. Goo/elemental shot intervals gradually shorten to 55% of their original duration. Enemy count starts at four and increases by one every two floors (floors 3, 5, 7, etc.), capped at 12; the 0.4-second melee warning stays readable, and environmental fire still deals 8 damage per pulse. New runs reset the scaling.
 
 For example, floor 2 has 112-health enemies dealing 13 melee damage; floor 6 has 160-health enemies dealing 17. The left panel displays enemy health percentage and melee damage. These are initial tuning values to playtest alongside loot/progression.
 
@@ -104,7 +119,7 @@ A left sidebar shows floor, run time, health, enemies remaining, selected weapon
 
 ## Leaderboard integration
 
-The Express/MongoDB backend is in `backend/`. Both frontend request URLs remain hardcoded near the bottom of `frontend/game.js`; update both when choosing a new backend address.
+The Express/MongoDB backend is in `backend/`. The shared API base URL is hardcoded in `apiRequest()` in `frontend/game.js`; update it when choosing a new backend address.
 
 | Method | Endpoint | Frontend contract |
 | --- | --- | --- |
@@ -128,11 +143,14 @@ Edit the source and reload the browser. Keep DOM IDs synchronized between HTML a
 ```powershell
 node --check frontend/game.js
 npm --prefix backend run check
+node --test tests/game.test.cjs
 ```
+
+The latest gameplay validation passed 69 offline regression tests and isolated browser checks for Lantern Order, reward healing, descent, and responsive layouts. These results apply to the uncommitted working tree, not a verified deployment.
 
 Frontend regression tests use a mocked browser environment without network/database access; actual layout and game feel still need browser playtesting. There is no formatter configuration. Only the backend has Node.js dependencies. For gameplay changes, manually check movement/walls, both weapons, pickups, chest rewards, floor transitions, game over, and retry. Inspect the console and test leaderboard failure handling. Mock API responses for submission tests to avoid adding test scores to production.
 
-Known limitations include unverified client-submitted scores, puzzle generation not yet implemented, and run balance still needing playtesting. See `AGENTS.md` for causes and proposed solutions. Serve only `frontend/` publicly; never publish the repository root or backend environment files.
+Known limitations include unverified client-submitted scores, additional puzzles not yet implemented, and run balance still needing playtesting. See `AGENTS.md` for causes and proposed solutions. Serve only `frontend/` publicly; never publish the repository root or backend environment files.
 
 ## Backend deployment
 
@@ -158,6 +176,6 @@ One Git repository contains two separately deployed components:
 
 - **Netlify:** connect the combined repository and branch, leave the repository root as the base directory, and publish `frontend`. The root `netlify.toml` records this. No frontend build is needed.
 - **Railway:** connect the same repository and branch, set the service root to `/backend`, and explicitly set the config file path to `/backend/railway.json`. It installs locked dependencies and starts with `npm start`. Set the variables above and provision access to your MongoDB database.
-- Update both frontend API URLs if the backend hostname changes, then verify the leaderboard. Only submit a real score or an explicitly authorized test score.
+- Update the shared frontend API base URL if the backend hostname changes, then verify the leaderboard. Only submit a real score or an explicitly authorized test score.
 
 The combined GitHub repository is **DungeonCrawler**. Both original Git histories are preserved through a merge commit, with no history rewrite. The migration branch is `codex/dungeoncrawler-monorepo`; the local checkout remains named `JS_Game`. The origin URL is `https://github.com/LuxAlexander/DungeonCrawler.git`. The original backend checkout remains intact. The owner approved retiring the old GitHub backend repository after merging the migration. Hosted deployment reconnection is still a separate step; the backend is currently undeployed.

@@ -27,6 +27,7 @@
             <dl class="stat-list">
                 <div><dt>Weapon</dt><dd id="weapon-stat">Sword</dd></div>
                 <div><dt>Damage / hit</dt><dd id="damage-stat">25</dd></div>
+                <div><dt>Arrows</dt><dd id="ammo-stat">0</dd></div>
                 <div><dt>Move speed</dt><dd id="speed-stat">240 px/s</dd></div>
                 <div><dt>Condition</dt><dd id="status-stat">Normal</dd></div>
                 <div><dt>Run perk</dt><dd id="perk-stat">None</dd></div>
@@ -40,7 +41,7 @@
                 <li><span class="slime-dot water-dot" aria-hidden="true"></span><span><strong>Tide</strong><small>Water carries you forward</small></span></li>
             </ul>
             <h3>CONTROLS</h3>
-            <p class="panel-note">WASD: move<br>Arrows: aim &amp; fire bow<br>Two arrows: diagonal shot<br>Space: attack<br>Q: switch weapon</p>
+            <p class="panel-note">WASD: move<br>Arrows: directional attack<br>Two arrows: diagonal attack<br>Space: attack<br>Q: switch weapon<br>E: activate nearby lantern</p>
         </aside>
 
         <div id="game-wrapper">
@@ -60,6 +61,8 @@
                     <div class="health-card">
                         <div class="health-caption"><span>VITALITY</span><strong><span id="hp-count">100</span> / <span id="max-hp-count">100</span></strong></div>
                         <progress id="health-meter" class="health-meter" max="100" value="100" aria-label="Health"></progress>
+                        <div class="skill-caption" id="skill-status">No skill equipped</div>
+                        <progress id="skill-meter" class="skill-meter" max="20" value="0" aria-label="Fire Ring recharge"></progress>
                     </div>
                     <div class="hud-counter"><span>SLIMES SLAIN</span><strong id="slain-count">0</strong></div>
                     <div class="hud-counter gold-counter"><span>PURSE</span><strong id="gold-count">0</strong></div>
@@ -68,10 +71,16 @@
                     <div class="inventory-box"><span class="inventory-label">EQUIPPED</span><span id="inventory-list"><span class="inv-item active-weapon">Sword</span></span><kbd>Q</kbd></div>
                     <p id="floor-objective">Clear for treasure or find the next passage.</p>
                 </div>
+                <p id="puzzle-status" class="puzzle-status" hidden></p>
                 <div id="log" role="status">Welcome to the Labyrinth...</div>
             </header>
 
-            <canvas id="space"></canvas>
+            <div id="game-viewport"><canvas id="space" aria-label="Dungeon game area"></canvas></div>
+            <section id="touch-controls" aria-label="Touch game controls">
+                <div class="touch-pad-group"><span>MOVE</span><div id="move-pad" class="touch-pad" aria-label="Drag to move"><span class="pad-cross" aria-hidden="true">✥</span><span id="move-pad-thumb" class="pad-thumb"></span></div></div>
+                <div class="touch-actions"><span id="touch-weapon">Sword</span><button type="button" id="touch-switch">Switch weapon</button><button type="button" id="touch-interact">Interact · lantern</button></div>
+                <div class="touch-pad-group"><span>AIM &amp; ATTACK</span><div id="aim-pad" class="touch-pad" aria-label="Drag to aim and attack"><span class="pad-cross" aria-hidden="true">✥</span><span id="aim-pad-thumb" class="pad-thumb"></span></div></div>
+            </section>
         </div>
 
         <aside id="leaderboard" class="side-panel" aria-labelledby="leaderboard-heading">
@@ -90,11 +99,12 @@
         <p class="shop-intro">Trade your treasure for another chance down below.</p>
         <p class="shop-purse">YOUR PURSE <strong><span id="shop-gold">0</span> GOLD</strong></p>
         <div class="shop-offers">
-            <article class="shop-offer"><span class="offer-tier">SMALL · 25 GOLD</span><h3>Heartstone</h3><p>+10 maximum health.<br>Carry a little more courage.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-vitality">BUY · 25 GOLD</button></article>
+            <article class="shop-offer"><span class="offer-tier">SMALL · 25 GOLD</span><h3>Heartstone</h3><p>+5 maximum health.<br>Carry a little more courage.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-vitality">BUY · 25 GOLD</button></article>
             <article class="shop-offer"><span class="offer-tier">MEDIUM · 50 GOLD</span><h3>Honed Steel</h3><p>+5 damage to sword and bow.<br>Even a bow found later benefits.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-damage">BUY · 50 GOLD</button></article>
-            <article class="shop-offer storm-offer"><span class="offer-tier">SPECIAL · 150 GOLD</span><h3>Storm Spark</h3><p>Weapon hits arc to one nearby slime for 50% damage. Walls block the spark.</p><span class="offer-tag">ONE PER RUN</span><button type="button" id="buy-storm">BUY · 150 GOLD</button></article>
+            <article id="offer-storm" class="shop-offer storm-offer"><span class="offer-tier">SPECIAL · 150 GOLD</span><h3>Storm Spark</h3><p>Weapon hits arc to one nearby slime for 50% damage. Walls block the spark.</p><span class="offer-tag">ONE PER RUN</span><button type="button" id="buy-storm">BUY · 150 GOLD</button></article>
+            <article id="offer-fire" class="shop-offer storm-offer" hidden><span class="offer-tier">SPECIAL · 150 GOLD</span><h3>Fire Ring</h3><p>Weapon hits ignite a ring for 5 seconds. Burns nearby enemies for 8 damage every 0.5 seconds. Walls block damage. 20-second cooldown.</p><span class="offer-tag">ONE PER RUN</span><button type="button" id="buy-fire">BUY · 150 GOLD</button></article>
         </div>
-        <p id="shop-message" role="status">Run upgrades last until defeat. Health refills when you descend.</p>
+        <p id="shop-message" role="status">One upgrade per floor. Descending restores 30 HP.</p>
         <div class="shop-actions"><button type="button" id="shop-return">Return to floor</button><button type="button" id="shop-continue">Descend to next floor →</button></div>
         <p class="shop-footnote">No purchase required. Gold spent here still counts toward your leaderboard total.</p>
     </dialog>
