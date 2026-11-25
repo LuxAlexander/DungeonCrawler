@@ -29,7 +29,7 @@ Gameplay runs locally without a backend. No separate local backend or developmen
 | Horizontal + vertical arrow | Attack diagonally (for example Up + Right) |
 | Space (hold) | Attack repeatedly |
 | Q | Cycle collected weapons |
-| E | Activate the nearest lantern within reach (floor-one puzzle) |
+| E | Interact with the nearest puzzle object within reach |
 | Retry | Start another run after game over |
 | Submit | Save the run locally, attempt online submission, then restart |
 
@@ -37,23 +37,23 @@ The sword swings in a forward arc. Arrow keys aim and attack with the equipped s
 
 ## Play on a phone or tablet
 
-Open the game in a modern mobile browser. The **left thumb pad moves**; the **right pad aims and repeatedly attacks** with the equipped weapon. Drag diagonally for diagonal movement or attacks; release a pad to stop. Both pads work simultaneously. Tap **Switch weapon** to choose sword/bow; the weapon label includes remaining bow ammo. Tap **Interact · lantern** beside a lantern to activate it. Shop, retry, and score buttons support taps.
+Open the game in a modern mobile browser. The **left thumb pad moves** and the **right pad aims and repeatedly attacks** with the equipped weapon. Drag diagonally for diagonal movement or attacks. Release a pad to stop. Both pads work simultaneously. Tap the **sword with swap arrows** icon to choose sword/bow. The weapon label includes remaining bow ammo. Tap the **hand** icon to interact with a nearby puzzle object. Shop, retry, and score buttons support taps.
 
-On touch screens up to 1100px wide, only the dungeon and essential touch controls fill the screen in portrait or landscape. The title, HUD, puzzle messages, stats sidebar, and leaderboard are hidden. The enlarged dungeon view follows the player; weapon/ammo remain in the control strip, and health feedback stays on the player. Shop and game-over screens appear when needed. Controls remain outside the game view so thumbs do not cover enemies. Landscape provides a wider view. Dragging the pads does not scroll the page; scrolling and browser zoom remain available outside them.
+On touch screens up to 1100px wide, only the dungeon and essential touch controls fill the screen in portrait or landscape. The title, HUD, puzzle messages, stats sidebar, and leaderboard are hidden. The enlarged dungeon view follows the player; weapon/ammo remain beside the icon buttons, and health feedback stays on the player. Shop and game-over screens appear when needed. The control bar is a transparent overlay on the dungeon; joysticks and icon buttons are translucent so the floor stays visible underneath. Buttons keep accessible names for screen readers. Landscape provides a wider view. Dragging the pads does not scroll the page; scrolling and browser zoom remain available outside them.
 
 Verification used emulated touch gestures in Edge, including simultaneous fingers, camera tracking, portrait/landscape layouts, and tap actions. Physical Android/iPhone comfort, performance, and Safari behavior still need device testing. Changes remain local and uncommitted; the live demo has not been updated.
 
 ## Gameplay
 
 - Player arrivals are reserved before enemy placement: every enemy starts at least 280 world pixels from the player, including on retry and descent.
-- Each floor generates a maze with four slimes initially (at least one Moss, Ember, and Tide), three random pickups, and two arrow bundles. Slimes follow paths through corridors, pursue nearby players, and roam when farther away. Their elemental shots create matching patches on wall or player impact.
-- Slime melee attacks show an amber warning ring and exclamation mark for 0.4 seconds, then strike once for 12 damage on floor one (+1 per deeper floor) if you remain in range. A red ring marks the strike; move away to dodge. Hits give the player 0.7 seconds of protection from further damage.
+- Each floor generates a maze with four slimes initially (at least one Moss, Ember, and Tide), three pickups, and two arrow bundles. On floor one, one pickup is always a bow at a marked **Armory** beyond the Lantern alcove. Slimes follow paths through corridors, pursue nearby players, and roam when farther away. Their elemental shots create matching patches on wall or player impact.
+- Standard slime melee attacks show an amber warning ring and exclamation mark for 0.4 seconds, then strike once for 12 damage on floor one (+1 per deeper floor) if you remain in range. A red ring marks the strike. Move away to dodge. Hits give the player 0.7 seconds of protection from further damage.
 - Damage flashes, floating numbers, and a red canvas border show successful hits.
-- Every defeated slime drops 3–6 coins and has a 25% chance to drop a small potion healing 5 HP. Collect loot by approaching it; small potions remain while health is full. Coins add to both purse and total earned gold.
+- Ordinary slimes drop 3–6 coins and have a 25% chance to drop a small potion healing 5 HP. Collect loot by approaching it. Small potions remain while health is full. Coins add to both purse and total earned gold.
 - Flying slime shots deal 6 damage on contact, disappear on impact, leave their matching ground patch even when hit protection blocks damage, and respect walls.
 - Start with 100 health and a sword. The sword deals 25 damage in a forward arc (walls block it) with an animated crescent trail; the collectible bow fires glowing, directional arrows dealing 20 damage with a 300-pixel range. Both share a 0.4-second attack cooldown.
 - Health pickups restore up to 25 health, speed pickups increase speed for the current run, and the first bow pickup adds a ranged weapon and 8 arrows. Each arrow bundle grants 6 arrows, collectible even before finding a bow. Every bow shot spends one arrow; empty bows cannot fire. Ammo persists between floors and resets on a new run; the sidebar shows the remaining arrows. Pickups are automatic; ordinary floor potions are consumed even at full health, while small enemy-drop potions wait until health is missing.
-- Clearing all enemies creates a chest. Approach it to collect 50 gold once per floor.
+- Clearing all enemies places a chest beside the exit. Approach it for 50 gold and unlock a free choice at the shop: **Slimeforged Edge** (+2 weapon damage), **Explorer's Quiver** (+12 arrows), or **Guild Bounty** (+25 gold). Take at most one boon per floor, separately from the paid upgrade.
 - Reach the rune-lit stone-and-brass door on the right to open the optional floor shop. Buy upgrades, descend without buying, or return for missed loot. Descending restores 30 health, capped at maximum. Clearing enemies and collecting the chest are not required to exit.
 - Every deeper floor increases enemy health and melee damage, plus movement and shooting speed. Rushing without kills still increases difficulty; kills themselves do not. Score counts enemies slain; gold is tracked separately.
 - At zero health, enter a name of up to 10 characters and submit, or retry. Blank names become `Unknown`.
@@ -73,15 +73,29 @@ Upgrades survive floor changes and reset on a new run. Only one upgrade may be p
 
 The HUD **purse** is spendable gold. The side panel and leaderboard retain **total gold earned**, so buying upgrades does not reduce your recorded gold result. A cleared floor's chest still grants 50 gold.
 
-## Lantern Order and Lantern Heart
+## New enemies and the Slime King
 
-Floor one includes the optional **Lantern Order** puzzle in the entrance alcove. Discover the hidden order, randomized each new run. Move beside a numbered lantern and press **E**. Correct choices stay lit; a wrong choice resets the sequence and flashes all three lanterns red for 0.7 seconds. The order stays fixed during attempts, and no solution text or puzzle timer is shown. Solving it opens the nearby niche once: collect **Lantern Heart** to heal **5 HP per kill**, capped at maximum, for the rest of the run. It never revives a defeated player and resets on retry. The exit stays usable without solving the puzzle. Further puzzle concepts remain proposals in [docs/puzzles.md](docs/puzzles.md).
+| Enemy | First appears | Attack |
+| --- | --- | --- |
+| Skipper | Floor 2 | Marks a landing zone and leaps there. Move out of the marked circle before it lands. |
+| Prism | Floor 3 | Holds at range and draws three dashed aim lines before firing a spread of goo shots. |
+| Slime King | Floor 4, then every fourth floor | Guards an arena with a sweeping slam and spread shots. At half health, the spread widens to five fire shots. |
+
+The King is optional. Defeat him and collect his crown for **+10 maximum HP, 25 HP restored**, and a separate **25 gold** drop. Crowns from later encounters stack for the current run.
+
+## Puzzles and secrets
+
+- **Floor 1 — Lantern Order.** Find the shuffled sequence by activating the three lanterns. A wrong choice resets the sequence and flashes red. Collect the **Lantern Heart** to heal 5 HP per kill.
+- **Floor 2 — Rune Circuit.** Turn the stones until the lit route reaches the far end. Collect the **Tempered Shard** for +3 sword and bow damage, including bows picked up later.
+- **Floor 3 — Hidden cache.** Look for unusual stonework. The **Mossstep Charm** lets you keep 75% of normal movement speed in goo, up from 50%.
+
+Press **E** or tap the **hand** icon when close. These rewards last through the current run. See [puzzle details](docs/puzzles.md) for implementation notes.
 
 ## Floor difficulty
 
-Floor 1 starts with 100 enemy health and 12 melee damage. Each deeper floor adds 12 health and 1 melee damage. Movement rises from 96 world pixels/second by 3.6 per floor, capped at 168. Goo/elemental shot intervals gradually shorten to 55% of their original duration. Enemy count starts at four and increases by one every two floors (floors 3, 5, 7, etc.), capped at 12; the 0.4-second melee warning stays readable, and environmental fire still deals 8 damage per pulse. New runs reset the scaling.
+Floor 1 starts with 100 base enemy health and 12 base melee damage. Each deeper floor adds 12 base health and 1 melee damage. Standard movement rises from 96 world pixels/second by 3.6 per floor, capped at 168. Goo/elemental shot intervals gradually shorten to 55% of their original duration. The normal enemy count starts at four and grows by one every two floors, capped at 12 plus the King on boss floors. Environmental fire deals 8 damage per pulse. New runs reset the scaling.
 
-For example, floor 2 has 112-health enemies dealing 13 melee damage; floor 6 has 160-health enemies dealing 17. The left panel displays enemy health percentage and melee damage. These are initial tuning values to playtest alongside loot/progression.
+On floor 2, a standard slime has 112 health and deals 13 melee damage. The left panel displays the base health percentage and melee damage. Skipper starts with 70% of base health and Prism with 80%. The King has triple base health and 9 extra melee damage. These are initial values for playtesting.
 
 ## Dungeon look and elemental slimes
 
@@ -150,7 +164,7 @@ The latest gameplay validation passed 69 offline regression tests and isolated b
 
 Frontend regression tests use a mocked browser environment without network/database access; actual layout and game feel still need browser playtesting. There is no formatter configuration. Only the backend has Node.js dependencies. For gameplay changes, manually check movement/walls, both weapons, pickups, chest rewards, floor transitions, game over, and retry. Inspect the console and test leaderboard failure handling. Mock API responses for submission tests to avoid adding test scores to production.
 
-Known limitations include unverified client-submitted scores, additional puzzles not yet implemented, and run balance still needing playtesting. See `AGENTS.md` for causes and proposed solutions. Serve only `frontend/` publicly; never publish the repository root or backend environment files.
+Known limitations include unverified client-submitted scores and run balance still needing playtesting. See `AGENTS.md` for maintenance notes. Serve only `frontend/` publicly.
 
 ## Backend deployment
 

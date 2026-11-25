@@ -6,13 +6,13 @@ Use these records to carry ideas, decisions, and implementation progress across 
 | --- | --- |
 | [Decisions](decisions.md) | Agreed goals and constraints, including what has not been implemented |
 | [Ideas](ideas.md) | Candidate features, unanswered questions, and suggested next work |
-| [Puzzles](puzzles.md) | Implemented Lantern Order and further optional treasure-puzzle proposals |
+| [Puzzles](puzzles.md) | Lantern Order, Rune Circuit, the hidden cache, and optional treasure-puzzle proposals |
 | [Implementation log](implementation-log.md) | What actually changed, how it was checked, and remaining limitations |
 | [Maintenance memory](../AGENTS.md) | Architecture, working practices, and known technical pitfalls |
 
-## Current working-tree status (2026-10-30)
+## Current working-tree status (2026-11-24)
 
-Gameplay changes are implemented locally and remain uncommitted; deployment has not been verified. Current controls and balance are in [README](../README.md), technical invariants in [AGENTS](../AGENTS.md), and the latest accepted changes in D-013–D-019 in [decisions](decisions.md). Touch pads and a player-following mobile view are implemented alongside keyboard controls; mobile gameplay shows only the dungeon and essential controls, hiding the HUD and both sidebars. Lantern Order is implemented only on floor one with a hidden shuffled sequence, red mistake feedback, and Lantern Heart reward; the other puzzles remain proposals.
+The local game includes Skipper, Prism, the recurring optional Slime King, and three optional discoveries across the opening floors. Changes remain uncommitted. Current controls and balance are in [README](../README.md), with technical invariants in [AGENTS](../AGENTS.md). The game supports keyboard controls and a player-following touch view.
 
 The implementation log is chronological evidence, so older entries retain the values and checks from their date. Supersession notes in decisions identify later changes. Maintenance guidance describes current behavior rather than an accumulation of outdated snapshots.
 

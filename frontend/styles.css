@@ -186,6 +186,7 @@ canvas { border-color: #405557; box-shadow: 0 20px 40px #0006; }
 .slime-guide small { display: block; font-size: 10px; line-height: 1.6; margin-top: 3px; color: #a2b2ad; }
 .slime-dot { display: inline-block; flex-shrink: 0; width: 15px; height: 12px; border-top: 3px solid #fff5; border-bottom: 3px solid #0004; border-radius: 5px 5px 1px 1px; }
 .moss-dot { background: #66ce89; }.fire-dot { background: #f78345; }.water-dot { background: #53bde6; }
+.skipper-dot { background: #b9dc66; }.prism-dot { background: #a994e8; }
 @media (max-width: 1100px) {
     #ui-layer { padding: 15px 14px 10px; }
     .hud-readings { gap: 10px; }
@@ -213,6 +214,12 @@ canvas { border-color: #405557; box-shadow: 0 20px 40px #0006; }
 .shop-intro { font-size: 13px; color: #acbcb0; line-height: 1.5; }
 .shop-purse { display: flex; justify-content: space-between; gap: 12px; border-block: 1px solid #41534b; padding: 14px 0; margin: 20px 0; font-size: 12px; letter-spacing: 1px; }
 .shop-purse strong { color: #ebc779; }
+#clear-boons { padding: 14px; margin-bottom: 18px; border: 1px solid #8c7448; background: #302820; }
+#clear-boons h3 { margin: 0; color: #f3d89c; font-size: 13px; letter-spacing: 1px; }
+#clear-boon-status { margin: 8px 0 12px; font-size: 12px; line-height: 1.5; color: #ded1b5; }
+.clear-boon-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); gap: 8px; }
+.clear-boon-options button { border-color: #9c8050; background: #4b3c28; color: #fff0c8; font-size: 12px; }
+.clear-boon-options small { display: block; margin-top: 4px; color: #e0c497; }
 .shop-offers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .shop-offer { display: flex; flex-direction: column; padding: 18px 14px; background: #0a191d99; border: 1px solid #425750; }
 .offer-tier { font-size: 10px; color: #d7bc85; letter-spacing: 1px; }
@@ -248,15 +255,20 @@ canvas { border-color: #405557; box-shadow: 0 20px 40px #0006; }
 #game-viewport { min-width: 0; }
 #touch-controls { display: none; }
 @media (any-pointer: coarse) {
-    #touch-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: #112226; border: 1px solid #52625a; user-select: none; }
+    #touch-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: transparent; border: 0; user-select: none; position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; pointer-events: none; }
     .touch-pad-group { flex: 0 0 auto; text-align: center; font-size: 9px; color: #d6cca5; }
-    .touch-pad { width: 108px; height: 108px; margin-top: 6px; border-radius: 50%; border: 2px solid #789789; background: radial-gradient(circle, #3a5753, #172b30); display: grid; place-items: center; position: relative; touch-action: none; }
-    #aim-pad { border-color: #d4a263; background: radial-gradient(circle, #5d4533, #2b2525); }
+    .touch-pad { width: 108px; height: 108px; margin-top: 6px; border-radius: 50%; border: 2px solid #789789aa; background: radial-gradient(circle, #3a575366, #172b3044); display: grid; place-items: center; position: relative; touch-action: none; pointer-events: auto; }
+    #aim-pad { border-color: #d4a263bb; background: radial-gradient(circle, #5d453366, #2b252544); }
     .pad-cross { font-size: 68px; color: #adc7b22e; pointer-events: none; }
-    .pad-thumb { position: absolute; width: 42px; height: 42px; border-radius: 50%; background: #9bbfaa; border: 2px solid #d3e2c9; box-shadow: 0 3px 8px #0008; pointer-events: none; }
-    #aim-pad .pad-thumb { background: #d9a260; border-color: #ffe1a0; }
-    .touch-actions { display: flex; flex: 1; max-width: 170px; min-width: 0; flex-direction: column; gap: 8px; text-align: center; font-size: 10px; color: #ead8af; }
-    .touch-actions button { min-height: 44px; padding: 6px; font: inherit; color: #e7edde; background: #253e3b; border: 1px solid #7d9380; border-radius: 5px; touch-action: manipulation; }
+    .pad-thumb { position: absolute; width: 42px; height: 42px; border-radius: 50%; background: #9bbfaaaa; border: 2px solid #d3e2c9bb; box-shadow: 0 3px 8px #0008; pointer-events: none; }
+    #aim-pad .pad-thumb { background: #d9a260aa; border-color: #ffe1a0bb; }
+    .touch-actions { display: flex; flex: 1; max-width: 170px; min-width: 0; flex-direction: column; align-items: center; gap: 8px; text-align: center; font-size: 10px; color: #ead8af; }
+    .touch-pad-group > span, #touch-weapon { text-shadow: 0 1px 3px #000, 0 0 5px #000; }
+    .touch-actions button { width: 48px; height: 48px; flex: 0 0 48px; padding: 9px; color: #f1ead0; background: #172b3088; border: 1px solid #bbcfadbb; border-radius: 12px; touch-action: manipulation; pointer-events: auto; }
+    .touch-actions button svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .touch-actions button:hover { background: #172b3088; }
+    .touch-actions button:active { background: #658477aa; }
+    .touch-actions button:focus-visible { outline: 2px solid #ffe1a0; outline-offset: 3px; }
     #floor-shop button, #game-over-overlay button { min-height: 44px; touch-action: manipulation; }
 }
 @media (any-pointer: coarse) and (max-width: 1100px) {
@@ -267,13 +279,11 @@ canvas { border-color: #405557; box-shadow: 0 20px 40px #0006; }
     #game-wrapper { height: 100svh; display: flex; flex-direction: column; }
     #game-viewport { flex: 1 1 auto; min-height: 110px; overflow: hidden; position: relative; background: #0e1d20; container-type: size; }
     #game-viewport canvas { display: block; width: max(100%, 720px, 192.31cqh); max-width: none; height: auto; box-shadow: none; touch-action: none; }
-    #touch-controls { flex: 0 0 auto; }
     #game-over-overlay { position: fixed; top: 50%; left: 50%; width: min(90vw, 360px); max-height: 90svh; overflow-y: auto; z-index: 20; }
 }
 @media (any-pointer: coarse) and (max-width: 1100px) and (orientation: landscape) {
     .touch-pad { width: 90px; height: 90px; }
-    .touch-actions { max-width: 300px; flex-direction: row; align-items: center; }
-    .touch-actions button { flex: 1; }
+    .touch-actions { max-width: 220px; flex-direction: row; justify-content: center; }
     #touch-weapon { max-width: 70px; }
     #touch-controls { padding-top: 3px; padding-bottom: max(3px, env(safe-area-inset-bottom)); }
 }

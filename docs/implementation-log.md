@@ -202,6 +202,37 @@ Record completed work and actual validation here. This is a chronological histor
 
 **Limitations:** Physical-device/Safari comfort and performance remain untested. No commits or deployment.
 
+## 2026-10-30 — Transparent touch overlay and icon buttons
+
+**Status:** Implemented, uncommitted; related D-020.
+
+- Expanded dungeon behind an absolute-positioned transparent control overlay. Removed opaque bar/border and made pads/thumbs/buttons translucent. Empty overlay space ignores pointer input; controls remain interactive.
+- Replaced visible switch/interact text with inline sword/swap and hand SVG icons, retaining accessible labels/tooltips, existing IDs/actions, and 48px tap targets. Weapon/ammo text remains. Updated mobile documentation.
+
+**Verification:** Isolated Edge touch checks passed at 320x568/390x844 portrait, 844x390 landscape, and 768x1024 tablet. Verified transparent container overlapping dungeon, SVG-only buttons with accessible names, multitouch movement/attack, bow switching/ammo, interaction, camera, shop return, retry, and desktop panel preservation. No overflow or browser errors; API blocked. Portrait/landscape screenshots visually inspected. Browser/server closed. Markdown links and whitespace checks passed. Existing 69-test gameplay result was not rerun for this HTML/CSS/documentation-only change.
+
+**Limitations:** Physical-device/Safari and subjective icon clarity remain to playtest. No commits/deployment.
+
+## 2026-11-24 — Slime King, enemy roles, and relics
+
+**Status:** Implemented locally and uncommitted. Related to I-002, I-006, I-009, I-018, P-004, and P-005.
+
+- Added the Skipper's warned leap on floor two, Prism's warned spread shot on floor three, and a Slime King encounter every fourth floor. The King adds a melee slam, a fire phase, and a crown and gold reward. Every floor still has a usable exit with enemies alive.
+- Added the floor-two Rune Circuit and floor-three cracked-wall cache, with one relic apiece. E and the touch hand use shared visibility and reach checks. Relics stack with applicable run upgrades and reset on retry.
+
+**Verification:** Frontend and backend syntax checks and 74 offline Node tests passed. Coverage includes locked attack targets, wall checks, boss phases and bypass, one-time rewards, keyboard and touch interaction, future bow damage, retry resets, and spawn separation over 20 seeds through 12 floors. The local browser preview timed out. Visual playtesting and balance remain open.
+
+## 2026-11-25 — Clear-floor boons and early armory
+
+**Status:** Implemented locally, uncommitted; related to I-004 and D-004–D-006.
+
+- Clearing a floor now places its 50-gold chest beside the exit. Claiming it unlocks one optional boon at the shop: +2 weapon damage, +12 arrows, or +25 gold. The normal shop purchase remains independent and the exit is always usable.
+- Floor one always includes a visible Armory bow beyond the Lantern alcove. Starting loot now uses distinct tiles, and shortcut carving no longer opens isolated pockets. Quick Q taps now survive key release before the next frame.
+
+**Verification:** 81 offline Node tests passed. Frontend/backend syntax and whitespace checks passed. Chromium desktop exercised bow pickup, real keyboard switch/fire, a controlled final arrow hit at the door, boon selection, and descent. At 390 × 844, emulated touch verified the uncleared shop, tapping a boon, descent, and retry with no horizontal overflow or page errors. Leaderboard requests were blocked during browser checks.
+
+**Limitations:** No deployment, physical-device/Safari testing, or long-run balance pass.
+
 ## Entry format for future work
 
 Use a dated heading and include:

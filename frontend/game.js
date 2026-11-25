@@ -19,7 +19,6 @@ let goldSpent = 0;
 let shopOpen = false;
 let hasBow = false;
 let difficulty = 1;
-let goldpickup = false;
 let runTime = 0;
 
 const LOCAL_SCORES_KEY = "dungeoncrawler.scores.v1";
@@ -103,14 +102,15 @@ function handleKey(e, pressed) {
         " ": "attack", q: "switch", e: "interact" };
     const action = controls[key];
     if (!action) return;
+    const oneShot = action === "switch" || action === "interact";
     if (!pressed) {
-        // Keep one-shot interactions queued even if the key is released between frames.
-        if (action !== "interact") keys[action] = false;
+        // Keep one-shot actions queued even if the key is released between frames.
+        if (!oneShot) keys[action] = false;
         return;
     }
     if (isGameOver || shopOpen || e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
     e.preventDefault();
-    if (!["switch", "interact"].includes(action) || !e.repeat) keys[action] = true;
+    if (!oneShot || !e.repeat) keys[action] = true;
 }
 
 window.addEventListener("keydown", e => handleKey(e, true));
@@ -201,7 +201,7 @@ function updateStats() {
         "floor-count": dungeon.floor,
         "gold-earned-stat": goldCollected,
         "max-hp-count": player.maxHealth,
-        "perk-stat": [player.stormSpark && "Storm Spark", player.fireRing && "Fire Ring", player.lanternHeart && "Lantern Heart (+5 HP/kill)"].filter(Boolean).join(" + ") || "None",
+        "perk-stat": [player.stormSpark && "Storm Spark", player.fireRing && "Fire Ring", player.lanternHeart && "Lantern Heart (+5 HP/kill)", player.mossstepCharm && "Mossstep Charm"].filter(Boolean).join(" + ") || "None",
         "enemy-health-scale": Math.round(difficulty * 100) + "%",
         "enemy-hit-stat": 12 + dungeon.floor - 1,
         "floor-badge": "DEPTH " + String(dungeon.floor).padStart(2, "0"),
@@ -211,7 +211,7 @@ function updateStats() {
         "weapon-stat": player.weapon.name,
         "damage-stat": player.weapon.damage,
         "ammo-stat": player.ammo,
-        "speed-stat": (player.sliding ? Math.hypot(player.slideVelocity.x, player.slideVelocity.y) : player.speed * 60 * (player.slowed ? 0.5 : 1)).toFixed(0) + " px/s",
+        "speed-stat": (player.sliding ? Math.hypot(player.slideVelocity.x, player.slideVelocity.y) : player.speed * 60 * (player.slowed ? player.gooSpeedModifier : 1)).toFixed(0) + " px/s",
         "status-stat": [player.inFire && "Burning", player.sliding && "Sliding", player.slowed && "Slowed"].filter(Boolean).join(" · ") || "Normal",
         "remaining-count": dungeon.room.entities.filter(e => e instanceof Enemy && !e.dead).length
     };
@@ -242,8 +242,10 @@ function updateStats() {
         healthMeter.className = player.health <= 30 ? "health-meter critical" : "health-meter";
     }
     const objective = document.getElementById("floor-objective");
-    if (objective) objective.textContent = goldpickup ? "Treasure claimed. Find the next passage." :
-        stats["remaining-count"] ? stats["remaining-count"] + " slimes remain · clear for treasure or press onward" : "Floor cleared · find your treasure chest";
+    const boss = dungeon.room.entities.find(entity => entity instanceof Enemy && entity.role === "king" && !entity.dead);
+    if (objective) objective.textContent = boss ? "Slime King guards a crown · defeat him or press onward" :
+        dungeon.room.clearChest?.dead ? (dungeon.room.clearBoon ? "Boon claimed · find the next passage" : "Treasure claimed · choose a boon at the exit") :
+        stats["remaining-count"] ? stats["remaining-count"] + " slimes remain · clear for treasure or press onward" : "Floor cleared · treasure waits by the exit";
     Object.entries(stats).forEach(([id, value]) => {
         const element = document.getElementById(id);
         if (element && element.textContent !== String(value)) element.textContent = value;
@@ -333,6 +335,12 @@ const SLIME_TYPES = {
     water: { body: "#53bde6", light: "#b5f0fa", dark: "#286caa", name: "Tide" }
 };
 
+const SLIME_ROLES = {
+    skipper: { name: "Skipper", body: "#b9dc66", light: "#ecffa9", dark: "#627a36" },
+    prism: { name: "Prism", body: "#a994e8", light: "#e7d5ff", dark: "#625092" },
+    king: { name: "Slime King", body: "#d889ae", light: "#ffd47d", dark: "#8b486f" }
+};
+
 /* ================= TILE ================= */
 
 class Tile {
@@ -417,7 +425,6 @@ class Room {
     }
 
     generateLabyrinth() {
-        goldpickup = false;
         this.tiles = [];
         this.terrain = null;
         for (let y = 0; y < this.rows; y++) {
@@ -459,7 +466,11 @@ class Room {
         for (let i = 0; i < 175; i++) {
             let rx = Math.floor(Math.random() * (this.cols - 2)) + 1;
             let ry = Math.floor(Math.random() * (this.rows - 2)) + 1;
-            this.getTile(rx, ry).walkable = true;
+            // Open shortcuts only from existing corridors; isolated floors can trap arrivals or loot.
+            if (this.getTile(rx - 1, ry).walkable || this.getTile(rx + 1, ry).walkable ||
+                this.getTile(rx, ry - 1).walkable || this.getTile(rx, ry + 1).walkable) {
+                this.getTile(rx, ry).walkable = true;
+            }
         }
     }
 
@@ -567,6 +578,7 @@ class Room {
     draw() {
         this.drawTerrain();
         this.doors.forEach(d => d.draw());
+        if (this.clearChest && !this.clearChest.dead) this.clearChest.draw();
         const visible = this.entities.filter(e => !e.dead);
         [...visible.filter(e => e instanceof GooPuddle), ...visible.filter(e => !(e instanceof GooPuddle))].forEach(e => {
             e.draw();
@@ -584,14 +596,15 @@ class Room {
         player.speedModifier = 1;
         this.entities.filter(e => e instanceof GooPuddle).forEach(e => e.update(deltaTime));
         this.entities.filter(e => !(e instanceof GooPuddle)).forEach(e => e.update(deltaTime));
+    }
 
-        const enemiesLeft = this.entities.some(e => e instanceof Enemy);
-        const chestExists = this.entities.some(e => e instanceof Chest);
-
-        if (!enemiesLeft && !chestExists) {
-            const pos = this.getSafePos();
-            this.entities.push(new Chest(pos.x, pos.y));
+    updateClearChest() {
+        const exit = this.doors[0];
+        if (exit && !this.clearChest && player.health > 0 && !this.entities.some(e => e instanceof Enemy && !e.dead)) {
+            // The tile left of the upper half of the exit is a guaranteed maze cell.
+            this.clearChest = new Chest(exit.x - 36, exit.y + 4);
         }
+        this.clearChest?.update();
     }
 }
 
@@ -610,38 +623,55 @@ class Dungeon {
         this.perkOffer = Math.random() < 0.5 ? "storm" : "fire";
         difficulty = 1 + (this.floor - 1) * 0.12;
         const newRoom = new Room(25, 12, 40);
-        newRoom.doors.push(new Door(960, 200));
+        const exit = new Door(960, 200);
+        newRoom.doors.push(exit);
+        const bossFloor = this.floor % 4 === 0;
+        const inArena = tile => bossFloor && tile.x >= 440 && tile.x <= 680 && tile.y >= 120 && tile.y <= 360;
+        newRoom.tiles.filter(inArena).forEach(tile => tile.walkable = true);
         if (this.floor === 1) createLanternPuzzle(newRoom);
+        if (this.floor === 2) createRuneCircuit(newRoom);
+        if (this.floor === 3) newRoom.entities.push(new HiddenCache(newRoom.getTile(0, 7)));
         // Reserve the arrival before placing enemies, rather than hoping for an empty random tile.
-        this.spawn = this.floor === 1 ? { x: 45, y: 125 } : newRoom.getSafePos();
-        const enemySpawns = newRoom.tiles.filter(tile => tile.walkable).map(tile =>
+        this.spawn = this.floor <= 3 || bossFloor ? { x: 45, y: this.floor === 1 ? 125 : 45 } : newRoom.getSafePos();
+        const enemySpawns = newRoom.tiles.filter(tile => tile.walkable && !inArena(tile)).map(tile =>
             ({ x: tile.x + 5, y: tile.y + 5 })).filter(pos =>
-            dist({ x: this.spawn.x + 12.5, y: this.spawn.y + 10 }, { x: pos.x + 17.5, y: pos.y + 15 }) >= 280);
+            dist({ x: this.spawn.x + 12.5, y: this.spawn.y + 10 }, { x: pos.x + 17.5, y: pos.y + 15 }) >= 280 &&
+            (this.floor !== 2 || pos.x > 285 || pos.y > 205));
 
         const enemyCount = Math.min(12, 4 + Math.floor((this.floor - 1) / 2));
         for (let i = 0; i < enemyCount; i++) {
-            const pos = enemySpawns[Math.floor(Math.random() * enemySpawns.length)];
-            const element = i < 3 ? ["goo", "fire", "water"][i] : ["goo", "fire", "water"][Math.floor(Math.random() * 3)];
-            newRoom.entities.push(new Enemy(pos.x, pos.y, element));
+            const [pos] = enemySpawns.splice(Math.floor(Math.random() * enemySpawns.length), 1);
+            let role = "standard";
+            if (i >= 3 && this.floor >= 2) role = i % 2 === 1 ? "skipper" : "prism";
+            const element = i < 3 ? ["goo", "fire", "water"][i] : role === "standard" ?
+                ["goo", "fire", "water"][Math.floor(Math.random() * 3)] : "goo";
+            newRoom.entities.push(new Enemy(pos.x, pos.y, element, role));
+        }
+        if (bossFloor) {
+            newRoom.entities.push(new Enemy(544, 230, "goo", "king"));
         }
 
-        const itemSpawns = newRoom.tiles.filter(tile => tile.walkable &&
-            (this.floor !== 1 || tile.x >= 240 || tile.y >= 160)).map(tile => ({ x: tile.x + 5, y: tile.y + 5 }));
-        for (let i = 0; i < 3; i++) {
-            const itemPos = itemSpawns[Math.floor(Math.random() * itemSpawns.length)];
+        const tileAt = ({ x, y }) => newRoom.getTile(Math.floor(x / newRoom.tileSize), Math.floor(y / newRoom.tileSize));
+        const reserved = new Set([tileAt(this.spawn), tileAt({ x: exit.x - 20, y: exit.y })]);
+        for (const entity of newRoom.entities) reserved.add(tileAt(center(entity)));
+        const itemSpawns = newRoom.tiles.filter(tile => tile.walkable && !inArena(tile) && !reserved.has(tile) &&
+            (this.floor !== 1 || tile.x >= 240 || tile.y >= 160) &&
+            (this.floor !== 2 || tile.x >= 280 || tile.y >= 240));
+        const placeItem = (type, armory = false) => {
+            const pool = armory ? itemSpawns.filter(tile => tile.x >= 280 && tile.x < 480) : itemSpawns;
+            const tile = pool[Math.floor(Math.random() * pool.length)];
+            itemSpawns.splice(itemSpawns.indexOf(tile), 1);
+            const item = new Item(tile.x + 8, tile.y + 8, type);
+            if (armory) item.armory = true;
+            newRoom.entities.push(item);
+        };
+        if (this.floor === 1) placeItem("bow", true);
+        for (let i = this.floor === 1 ? 1 : 0; i < 3; i++) {
             const rand = Math.random();
-            let type;
-            if (rand < 0.4) type = "health";
-            else if (rand < 0.8) type = "speed";
-            else if (!hasBow) type = "bow";
-            else type = "health";
-
-            newRoom.entities.push(new Item(itemPos.x, itemPos.y, type));
+            const type = rand < 0.4 ? "health" : rand < 0.8 ? "speed" : this.floor > 1 && !hasBow ? "bow" : "health";
+            placeItem(type);
         }
-        for (let i = 0; i < 2; i++) {
-            const pos = itemSpawns[Math.floor(Math.random() * itemSpawns.length)];
-            newRoom.entities.push(new Item(pos.x, pos.y, "arrows"));
-        }
+        for (let i = 0; i < 2; i++) placeItem("arrows");
 
         this.currentRoom = newRoom;
         if (player) {
@@ -689,14 +719,27 @@ function createLanternPuzzle(room) {
     room.entities.push(new LanternNiche(208, 128));
 }
 
-function interactLantern() {
+function interactNearby() {
     const room = dungeon.room;
-    if (!room.puzzle || room.puzzle.solved) return;
-    const lantern = room.entities.filter(entity => entity instanceof Lantern &&
-        dist(center(player), center(entity)) <= 45 && room.hasLineOfSight(center(player), center(entity)))
-        .sort((a, b) => dist(center(player), center(a)) - dist(center(player), center(b)))[0];
-    if (!lantern) { updateUI("Move beside a lantern and press E."); return; }
+    const origin = center(player);
+    let nearest = null, reach = 45;
+    for (const entity of room.entities) {
+        if (entity.dead || !entity.interact) continue;
+        const point = center(entity);
+        const distance = dist(origin, point);
+        if (distance <= reach && room.hasLineOfSight(origin, point)) {
+            nearest = entity;
+            reach = distance;
+        }
+    }
+    if (nearest) nearest.interact();
+    else if (room.puzzle && !room.puzzle.solved) updateUI("Move beside a lantern and press E.");
+}
+
+function interactLantern(lantern) {
+    const room = dungeon.room;
     const puzzle = room.puzzle;
+    if (puzzle.solved) return;
     if (puzzle.order[puzzle.progress] !== lantern.index) {
         puzzle.progress = 0;
         puzzle.errorUntil = runTime + 0.7;
@@ -715,6 +758,7 @@ function interactLantern() {
 
 class Lantern extends Entity {
     constructor(x, y, index) { super(x, y, 24, 28, "#b78a48"); this.index = index; }
+    interact() { interactLantern(this); }
     draw() {
         const puzzle = dungeon.room.puzzle;
         const lit = puzzle.order.slice(0, puzzle.progress).includes(this.index);
@@ -748,6 +792,140 @@ class LanternNiche extends Entity {
     }
 }
 
+function rotateRune(mask) {
+    return ((mask << 1) | (mask >> 3)) & 15;
+}
+
+function createRuneCircuit(room) {
+    for (let y = 1; y <= 5; y++) {
+        for (let x = 1; x <= 6; x++) room.getTile(x, y).walkable = true;
+    }
+    room.terrain = null;
+    const circuit = { pieces: [], lit: 0, solved: false };
+    // Each mask encodes the legs facing north, east, south, and west.
+    const layout = [[3, 3, 10], [4, 3, 12], [4, 4, 3], [5, 4, 10]];
+    circuit.pieces = layout.map(([x, y, mask], index) => {
+        const rightMask = mask;
+        const turns = Math.floor(Math.random() * 4);
+        for (let i = 0; i < turns; i++) mask = rotateRune(mask);
+        return new RuneStone(x * 40, y * 40, circuit, index, mask, rightMask);
+    });
+    if (circuit.pieces.every(piece => piece.mask === piece.rightMask)) {
+        circuit.pieces[0].mask = rotateRune(circuit.pieces[0].mask);
+    }
+    circuit.lit = circuit.pieces.findIndex(piece => piece.mask !== piece.rightMask);
+    room.entities.push(...circuit.pieces, new RuneTerminal(80, 120, true, circuit), new RuneTerminal(240, 160, false, circuit));
+}
+
+class RuneStone extends Entity {
+    constructor(x, y, circuit, index, mask, rightMask) {
+        super(x, y, 40, 40, "#36454e");
+        Object.assign(this, { circuit, index, mask, rightMask });
+    }
+    interact() {
+        if (this.circuit.solved) return;
+        this.mask = rotateRune(this.mask);
+        const gap = this.circuit.pieces.findIndex(piece => piece.mask !== piece.rightMask);
+        this.circuit.lit = gap === -1 ? this.circuit.pieces.length : gap;
+        if (gap !== -1) return;
+        this.circuit.solved = true;
+        dungeon.room.entities.push(new Item(248, 168, "tempered-shard"));
+        updateUI("The rune circuit opens a niche!");
+    }
+    draw() {
+        const { x, y } = this.pos;
+        const lit = this.index < this.circuit.lit;
+        c.fillStyle = "#2c3a40";
+        c.fillRect(x + 2, y + 2, 36, 36);
+        c.fillStyle = lit ? "#80f3dc" : "#a4a6cd";
+        if (this.mask & 1) c.fillRect(x + 18, y, 4, 20);
+        if (this.mask & 2) c.fillRect(x + 20, y + 18, 20, 4);
+        if (this.mask & 4) c.fillRect(x + 18, y + 20, 4, 20);
+        if (this.mask & 8) c.fillRect(x, y + 18, 20, 4);
+        c.fillRect(x + 16, y + 16, 8, 8);
+    }
+}
+
+class RuneTerminal extends Entity {
+    constructor(x, y, source, circuit) {
+        super(x, y, 40, 40, "#63777c");
+        this.source = source;
+        this.circuit = circuit;
+    }
+    draw() {
+        const { x, y } = this.pos;
+        c.save();
+        c.fillStyle = "#2c3a40";
+        c.fillRect(x + 2, y + 2, 36, 36);
+        c.fillStyle = this.source || this.circuit.solved ? "#80f3dc" : "#686582";
+        c.fillRect(x + (this.source ? 20 : 0), y + 18, 20, 4);
+        c.fillRect(x + 13, y + 13, 14, 14);
+        if (this.source) {
+            c.textAlign = "center";
+            c.fillStyle = "#cef7e7";
+            c.font = "bold 12px monospace";
+            c.fillText("RUNE CIRCUIT", x + 64, y - 14);
+            c.font = "11px monospace";
+            c.fillText("Interact to turn the stones", x + 64, y);
+        }
+        c.restore();
+    }
+}
+
+class HiddenCache extends Entity {
+    constructor(gate) {
+        super(gate.x + gate.size + 2, gate.y + 8, 10, 24, "#84d4ad");
+        this.gate = gate;
+    }
+    interact() {
+        this.gate.walkable = true;
+        dungeon.room.terrain = null;
+        dungeon.room.entities.push(new Item(this.gate.x + 8, this.gate.y + 8, "mossstep-charm"));
+        this.destroy();
+        updateUI("The cracked stone slides open!");
+    }
+    draw() {
+        const { x, y } = this.gate;
+        c.save();
+        c.strokeStyle = this.color;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.moveTo(x + 37, y + 4);
+        c.lineTo(x + 29, y + 13);
+        c.lineTo(x + 34, y + 20);
+        c.lineTo(x + 25, y + 27);
+        c.lineTo(x + 28, y + 35);
+        c.stroke();
+        if (dist(center(player), center(this)) <= 65) {
+            c.fillStyle = "#c1f4cc";
+            c.font = "bold 11px monospace";
+            c.fillText("Loose stone", x + 43, y + 6);
+        }
+        c.restore();
+    }
+}
+
+const RELICS = {
+    "tempered-shard": {
+        name: "Tempered Shard", detail: "+3 weapon damage", color: "#f1a56f",
+        art: ["....#...", "...###..", "..####..", ".####...", ".###....", ".##.....", ".#......"],
+        collect: player => player.addWeaponDamage(3)
+    },
+    "mossstep-charm": {
+        name: "Mossstep Charm", detail: "Reduced goo slow", color: "#8fda93",
+        art: ["...##...", "..#..#..", "...##...", "..####..", ".######.", "..####..", "...##..."],
+        collect: player => { player.mossstepCharm = true; }
+    },
+    "slime-crown": {
+        name: "Slime Crown", detail: "+10 max HP, heals 25 HP", color: "#ffd47d",
+        art: ["...##...", "#..##..#", "#.####.#", "########", ".######.", ".######.", ".######."],
+        collect: player => {
+            player.maxHealth += 10;
+            player.health = Math.min(player.maxHealth, player.health + 25);
+        }
+    }
+};
+
 class Item extends Entity {
     constructor(x, y, type) {
         super(x, y, 24, 24, "transparent");
@@ -759,7 +937,19 @@ class Item extends Entity {
         const ox = this.pos.x;
         const oy = this.pos.y;
 
-        if (this.type === "lantern-heart") {
+        const relic = RELICS[this.type];
+        if (relic) {
+            c.save();
+            c.fillStyle = relic.color;
+            c.shadowColor = relic.color;
+            c.shadowBlur = 10;
+            relic.art.forEach((row, y) => {
+                for (let x = 0; x < row.length; x++) {
+                    if (row[x] === "#") c.fillRect(ox + x * px, oy + y * px, px, px);
+                }
+            });
+            c.restore();
+        } else if (this.type === "lantern-heart") {
             c.fillStyle = "#ffb765";
             c.fillRect(ox + 3, oy + 4, 8, 10); c.fillRect(ox + 13, oy + 4, 8, 10);
             c.fillRect(ox + 6, oy + 9, 12, 10); c.fillRect(ox + 10, oy + 19, 4, 3);
@@ -782,7 +972,18 @@ class Item extends Entity {
                 c.fillText("+5", ox + 4, oy - 2);
             }
         } else if (this.type === "bow") {
-
+            if (this.armory) {
+                c.save();
+                c.fillStyle = "#15272b";
+                c.fillRect(ox - 5, oy - 5, 34, 34);
+                c.strokeStyle = "#70c6bd";
+                c.strokeRect(ox - 5, oy - 5, 34, 34);
+                c.font = "bold 10px monospace";
+                c.textAlign = "center";
+                c.fillStyle = "#c2fff0";
+                c.fillText("ARMORY", ox + 12, oy - 8);
+                c.restore();
+            }
             // 0. Draw the Bowstring
             c.fillStyle = "white";
             const bowstring = [
@@ -836,7 +1037,12 @@ class Item extends Entity {
         if (player.health <= 0) { this.draw(); return; }
         if (dist(this.pos, player.pos) < 30) {
             if (this.type === "small-health" && player.health >= player.maxHealth) { this.draw(); return; }
-            if (this.type === "lantern-heart") {
+            const relic = RELICS[this.type];
+            if (relic) {
+                relic.collect(player);
+                effects.push({ ...center(player), text: relic.name, color: relic.color, life: 1.5, duration: 1.5 });
+                updateUI(relic.name + " collected. " + relic.detail + ".");
+            } else if (this.type === "lantern-heart") {
                 player.lanternHeart = true;
                 updateUI("Lantern Heart: every kill restores 5 HP for this run!");
             } else if (this.type === "coin") {
@@ -1024,6 +1230,7 @@ class Player extends Living {
         this.damageBonus = 0;
         this.stormSpark = false;
         this.lanternHeart = false;
+        this.mossstepCharm = false;
         this.fireRing = false;
         this.ringTime = 0;
         this.ringCooldown = 0;
@@ -1044,6 +1251,12 @@ class Player extends Living {
     }
 
     get weapon() { return this.inventory.weapons[this.inventory.index]; }
+    get gooSpeedModifier() { return this.mossstepCharm ? 0.75 : 0.5; }
+
+    addWeaponDamage(amount) {
+        this.damageBonus += amount;
+        this.inventory.weapons.forEach(weapon => weapon.damage += amount);
+    }
 
     movement(deltaTime) {
         let dx = (inputDown("right") ? 1 : 0) - (inputDown("left") ? 1 : 0);
@@ -1171,7 +1384,7 @@ class Player extends Living {
         this.invulnerable = Math.max(0, this.invulnerable - deltaTime);
         if (this.swing) this.swing.remaining = Math.max(0, this.swing.remaining - deltaTime);
         this.movement(deltaTime);
-        if (keys.interact) { keys.interact = false; interactLantern(); }
+        if (keys.interact) { keys.interact = false; interactNearby(); }
 
         if (keys.switch) {
             this.inventory.index = (this.inventory.index + 1) % this.inventory.weapons.length;
@@ -1199,15 +1412,18 @@ class Player extends Living {
 /* ================= ENEMY (SLIME) ================= */
 
 class Enemy extends Living {
-    constructor(x, y, element = "goo") {
-        super(x, y, 35, 30, "#00ff77");
+    constructor(x, y, element = "goo", role = "standard") {
+        super(x, y, role === "king" ? 72 : 35, role === "king" ? 60 : 30, "#00ff77");
         this.element = SLIME_TYPES[element] ? element : "goo";
+        this.role = role;
         this.trailTimer = 1.5;
         this.path = [];
         this.repathTimer = 0;
         this.attackTimer = 0;
         this.windingUp = false;
         this.strikeFlash = 0;
+        this.leapLanding = null;
+        this.volley = null;
         this.shotTimer = 2 + Math.random() * 2;
         this.walkTime = Math.random() * Math.PI * 2;
         this.moving = false;
@@ -1216,29 +1432,81 @@ class Enemy extends Living {
         this.shotRate = Math.max(0.55, 1 / (1 + depth * 0.06));
         this.shotTimer *= this.shotRate;
         this.maxHealth = Math.round(100 * difficulty);
-        this.health = this.maxHealth;
         this.speed = Math.min(2.8, 1.6 + depth * 0.06);
+        if (role === "skipper") {
+            this.maxHealth = Math.round(this.maxHealth * 0.7);
+            this.speed = Math.min(2.8, this.speed + 0.45);
+        } else if (role === "prism") {
+            this.maxHealth = Math.round(this.maxHealth * 0.8);
+        } else if (role === "king") {
+            this.maxHealth *= 3;
+            this.meleeDamage += 9;
+        }
+        this.health = this.maxHealth;
     }
 
     destroy() {
         if (!this.dead) {
             enemiesSlain++;
             if (player.lanternHeart && player.health > 0) player.health = Math.min(player.maxHealth, player.health + 5);
-            const coin = new Item(this.pos.x, this.pos.y, "coin");
-            coin.amount = 3 + Math.floor(Math.random() * 4);
+            const king = this.role === "king";
+            const origin = center(this);
+            const coin = new Item(king ? origin.x + 12 : this.pos.x, king ? origin.y - 12 : this.pos.y, "coin");
+            coin.amount = king ? 25 : 3 + Math.floor(Math.random() * 4);
             dungeon.room.entities.push(coin);
-            if (Math.random() < 0.25) dungeon.room.entities.push(new Item(this.pos.x + 10, this.pos.y, "small-health"));
+            if (king) dungeon.room.entities.push(new Item(origin.x - 22, origin.y - 12, "slime-crown"));
+            else if (Math.random() < 0.25) dungeon.room.entities.push(new Item(this.pos.x + 10, this.pos.y, "small-health"));
             if (this.element !== "goo") spawnHazard(dungeon.room, center(this), this.element);
-            updateUI(SLIME_TYPES[this.element].name + " slime defeated!");
+            const name = SLIME_ROLES[this.role]?.name ?? SLIME_TYPES[this.element].name + " slime";
+            updateUI(name + " defeated!");
         }
         super.destroy();
     }
 
+    findLeapLanding(room, origin, target) {
+        const steps = Math.ceil(dist(origin, target) / 4);
+        let landing = origin;
+        for (let i = 1; i <= steps; i++) {
+            const x = origin.x + (target.x - origin.x) * i / steps;
+            const y = origin.y + (target.y - origin.y) * i / steps;
+            if (!room.isWalkable(x - this.width / 2, y - this.height / 2, this.width, this.height)) break;
+            landing = { x, y };
+        }
+        return landing;
+    }
+
+    startVolley(origin, target) {
+        const enraged = this.role === "king" && this.health <= this.maxHealth / 2;
+        const angles = enraged ? [-0.5, -0.25, 0, 0.25, 0.5] : [-0.24, 0, 0.24];
+        const aim = Math.atan2(target.y - origin.y, target.x - origin.x);
+        this.volley = { remaining: 0.65, angles: angles.map(offset => aim + offset), element: enraged ? "fire" : "goo" };
+    }
+
+    drawVolley(origin) {
+        const room = dungeon.room;
+        c.strokeStyle = this.volley.element === "fire" ? "#ffb877" : "#e7d5ff";
+        c.lineWidth = 2;
+        c.setLineDash([5, 4]);
+        for (const angle of this.volley.angles) {
+            const dx = Math.cos(angle), dy = Math.sin(angle);
+            let distance = 0;
+            while (distance < 96 && room.isWalkable(origin.x + dx * (distance + 4) - 5, origin.y + dy * (distance + 4) - 5, 10, 10)) {
+                distance += 4;
+            }
+            c.beginPath();
+            c.moveTo(origin.x, origin.y);
+            c.lineTo(origin.x + dx * distance, origin.y + dy * distance);
+            c.stroke();
+        }
+        c.setLineDash([]);
+    }
+
     draw() {
         c.save();
+        const origin = center(this);
+        if (this.volley) this.drawVolley(origin);
         if (!this.dead && player.ringTime > 0 && dist(center(player), center(this)) <= 70 &&
             dungeon.room.hasLineOfSight(center(player), center(this))) {
-            const origin = center(this);
             c.strokeStyle = "#ff9944";
             c.lineWidth = 2;
             c.strokeRect(this.pos.x - 3, this.pos.y - 3, this.width + 6, this.height + 6);
@@ -1253,12 +1521,18 @@ class Enemy extends Living {
             c.fillRect(origin.x - 2, this.pos.y - 12, 4, 5);
         }
         if (this.windingUp || this.strikeFlash > 0) {
-            const origin = center(this);
+            const landing = this.leapLanding ?? origin;
             c.beginPath();
-            c.arc(origin.x, origin.y, 44, 0, Math.PI * 2);
+            c.arc(landing.x, landing.y, this.role === "king" ? 86 : this.role === "skipper" ? 34 : 44, 0, Math.PI * 2);
             c.strokeStyle = this.windingUp ? "#ffb347" : "#ff6655";
             c.lineWidth = 2;
             c.stroke();
+            if (this.leapLanding && this.windingUp) {
+                c.beginPath();
+                c.moveTo(origin.x, origin.y);
+                c.lineTo(landing.x, landing.y);
+                c.stroke();
+            }
             c.fillStyle = "#ffb347";
             c.font = "bold 20px monospace";
             c.textAlign = "center";
@@ -1267,7 +1541,7 @@ class Enemy extends Living {
         c.translate(0, this.moving ? Math.sin(this.walkTime) * 1.5 : 0);
         const px = this.width / 8;
         const py = this.height / 6;
-        const palette = SLIME_TYPES[this.element];
+        const palette = SLIME_ROLES[this.role] ?? SLIME_TYPES[this.element];
         c.fillStyle = palette.body;
         c.fillRect(this.pos.x + px * 2, this.pos.y, px * 4, py);
         c.fillRect(this.pos.x + px, this.pos.y + py, px * 6, py);
@@ -1278,7 +1552,16 @@ class Enemy extends Living {
         c.fillRect(this.pos.x + px, this.pos.y + py * 4, px * 6, py);
         c.fillStyle = palette.light;
         c.fillRect(this.pos.x + px * 2, this.pos.y + py, px * 2, py);
-        if (this.element === "fire") {
+        if (this.role === "king") {
+            c.fillRect(this.pos.x + px * 2, this.pos.y - 9, px * 4, 12);
+            for (let i = 0; i < 3; i++) c.fillRect(this.pos.x + px * (2 + i * 1.5), this.pos.y - 14, px, 5);
+        } else if (this.role === "prism") {
+            c.fillRect(origin.x - 2, this.pos.y - 5, 4, 12);
+            c.fillRect(origin.x - 5, this.pos.y - 2, 10, 6);
+        } else if (this.role === "skipper") {
+            c.fillRect(this.pos.x, this.pos.y + py * 4, px * 2, py);
+            c.fillRect(this.pos.x + px * 6, this.pos.y + py * 4, px * 2, py);
+        } else if (this.element === "fire") {
             c.fillRect(this.pos.x + px * 3, this.pos.y - py, px, py * 2);
             c.fillRect(this.pos.x + px * 5, this.pos.y - py * 0.5, px, py);
         } else if (this.element === "water") {
@@ -1289,6 +1572,27 @@ class Enemy extends Living {
         c.fillRect(this.pos.x + px * 2, this.pos.y + py * 2, px, py);
         c.fillRect(this.pos.x + px * 5, this.pos.y + py * 2, px, py);
         c.restore();
+    }
+
+    drawHealth() {
+        if (this.role === "king") {
+            c.save();
+            c.translate(0, -12);
+            c.textAlign = "center";
+            c.font = "bold 12px monospace";
+            c.fillStyle = "#ffd47d";
+            c.fillText("SLIME KING", center(this).x, this.pos.y - 13);
+            // Keep the hit flash on the body while lifting the bar above the crown.
+            if (this.hitFlash > 0) {
+                c.fillStyle = "rgba(255,255,255,0.5)";
+                c.fillRect(this.pos.x, this.pos.y + 12, this.width, this.height);
+            }
+            c.fillStyle = "#251c29";
+            c.fillRect(this.pos.x, this.pos.y - 8, this.width, 5);
+            c.fillStyle = this.health <= this.maxHealth / 2 ? "#ff946e" : "#ffd47d";
+            c.fillRect(this.pos.x, this.pos.y - 8, this.width * this.health / this.maxHealth, 5);
+            c.restore();
+        } else super.drawHealth();
     }
 
     update(deltaTime) {
@@ -1304,18 +1608,46 @@ class Enemy extends Living {
         const room = dungeon.room;
         const origin = center(this), target = center(player);
         const distance = dist(origin, target);
-        const canReach = distance <= 44 && room.hasLineOfSight(origin, target);
-        if (this.windingUp) {
+        const king = this.role === "king", skipper = this.role === "skipper", prism = this.role === "prism";
+        const sight = distance <= 320 && room.hasLineOfSight(origin, target);
+        const meleeRange = king ? 86 : 44;
+        const readyToStrike = !this.windingUp && !this.volley && sight && this.attackTimer <= 0;
+        const landing = skipper && readyToStrike && distance <= 90 ? this.findLeapLanding(room, origin, target) : null;
+        const canStrike = readyToStrike && (skipper ? landing && dist(landing, target) <= 34 : distance <= meleeRange);
+        if (this.volley) {
+            this.volley.remaining -= deltaTime;
+            if (this.volley.remaining <= 0) {
+                const { angles, element } = this.volley;
+                for (const angle of angles) {
+                    arrows.push(new GooShot(origin.x - 5, origin.y - 5, { x: Math.cos(angle), y: Math.sin(angle) }, element));
+                }
+                this.volley = null;
+                this.shotTimer = king ? (element === "fire" ? 1.8 : 2.5) : 2.3 * this.shotRate;
+            }
+        } else if (this.windingUp) {
             if (this.attackTimer <= 0) {
                 this.strikeFlash = 0.15;
-                if (canReach) player.onHit(this.meleeDamage);
+                if (this.leapLanding) {
+                    const landing = this.leapLanding;
+                    this.pos.x = landing.x - this.width / 2;
+                    this.pos.y = landing.y - this.height / 2;
+                    this.path = [];
+                }
+                const strike = center(this);
+                if (dist(strike, target) <= (skipper ? 34 : meleeRange) && room.hasLineOfSight(strike, target)) {
+                    player.onHit(this.meleeDamage);
+                }
+                this.leapLanding = null;
                 this.windingUp = false;
-                this.attackTimer = 0.85;
+                this.attackTimer = king ? 1.2 : 0.85;
             }
-        } else if (canReach && this.attackTimer <= 0) {
+        } else if (canStrike) {
+            this.leapLanding = landing;
             this.windingUp = true;
-            this.attackTimer = 0.4;
-        } else {
+            this.attackTimer = king ? 0.75 : skipper ? 0.48 : 0.4;
+        } else if ((king || prism) && sight && distance <= (king ? 320 : 215) && this.shotTimer <= 0) {
+            this.startVolley(origin, target);
+        } else if (!king && !(prism && sight && distance <= 180)) {
             const chasing = distance < 280;
             if (!this.path.length || (chasing && this.repathTimer <= 0)) {
                 let destination = target;
@@ -1343,7 +1675,7 @@ class Enemy extends Living {
             }
         }
         // Goo remains a slowing hazard; timed shots replace per-frame random firing.
-        if (!this.windingUp && this.shotTimer <= 0 && distance < 280 && room.hasLineOfSight(origin, target)) {
+        if (this.role === "standard" && !this.windingUp && this.shotTimer <= 0 && sight && distance < 280) {
             const length = distance || 1;
             arrows.push(new GooShot(origin.x, origin.y, { x: (target.x - origin.x) / length, y: (target.y - origin.y) / length }, this.element));
             this.shotTimer = (2.5 + Math.random() * 1.5) * this.shotRate;
@@ -1446,7 +1778,7 @@ class GooPuddle extends Entity {
                 player.inFire = true;
                 if (player.fireCooldown <= 0 && player.onHit(8)) player.fireCooldown = 0.9;
             } else if (this.element === "water") player.onWater = true;
-            else player.speedModifier = 0.5;
+            else player.speedModifier = player.gooSpeedModifier;
         }
         this.draw();
     }
@@ -1457,14 +1789,23 @@ class Chest extends Entity {
     constructor(x, y) { super(x, y, 32, 32, "gold"); }
     draw() {
         c.drawImage(chestImg, this.pos.x, this.pos.y, this.width, this.height);
+        c.save();
+        c.textAlign = "center";
+        c.font = "bold 10px monospace";
+        c.fillStyle = "#ffe0a1";
+        c.fillText("CLEAR LOOT", center(this).x, this.pos.y + 42);
+        c.restore();
     }
-    update(deltaTime) {
-        if (dist(this.pos, player.pos) < 30 && !goldpickup) {
+    update() {
+        if (this.dead) return;
+        const origin = center(player), treasure = center(this);
+        if (player.health > 0 && dist(treasure, origin) < 28 && dungeon.room.hasLineOfSight(origin, treasure)) {
             goldCollected += 50;
-            updateUI("Found 50 gold!");
-            goldpickup = true;
+            this.destroy();
+            updateUI("Found 50 gold! Choose a boon at the exit shop.");
+        } else {
+            this.draw();
         }
-        this.draw();
     }
 }
 
@@ -1535,9 +1876,20 @@ const SHOP_OFFERS = {
     fire: { cost: 150, name: "Fire Ring" }
 };
 
+const CLEAR_BOONS = {
+    edge: { name: "Slimeforged Edge", grant: () => player.addWeaponDamage(2) },
+    quiver: { name: "Explorer's Quiver", grant: () => { player.ammo += 12; } },
+    bounty: { name: "Guild Bounty", grant: () => { goldCollected += 25; } }
+};
+
 function updateShop() {
     document.getElementById("shop-gold").textContent = goldCollected - goldSpent;
     document.getElementById("shop-floor").textContent = "FLOOR " + dungeon.floor + " → " + (dungeon.floor + 1);
+    const { clearChest, clearBoon } = dungeon.room;
+    document.getElementById("clear-boons").hidden = !clearChest?.dead;
+    document.getElementById("clear-boon-status").textContent = clearBoon ? CLEAR_BOONS[clearBoon].name + " claimed." :
+        "Choose one for free. This does not use your shop purchase.";
+    for (const id of Object.keys(CLEAR_BOONS)) document.getElementById("boon-" + id).disabled = Boolean(clearBoon);
     for (const [id, offer] of Object.entries(SHOP_OFFERS)) {
         const button = document.getElementById("buy-" + id);
         const owned = (id === "storm" && player.stormSpark) || (id === "fire" && player.fireRing);
@@ -1553,8 +1905,21 @@ function openFloorShop() {
     shopOpen = true;
     resetKeys();
     updateShop();
-    document.getElementById("shop-message").textContent = "One upgrade per floor. Descending restores 30 HP.";
+    document.getElementById("shop-message").textContent = dungeon.room.clearChest && !dungeon.room.clearChest.dead ?
+        "The clear chest is just outside. Return to collect it, or descend now and restore 30 HP." :
+        "One upgrade per floor. Descending restores 30 HP.";
     document.getElementById("floor-shop").showModal();
+}
+
+function claimClearBoon(id) {
+    const room = dungeon.room;
+    if (!shopOpen || !room.clearChest?.dead || room.clearBoon || !Object.hasOwn(CLEAR_BOONS, id)) return false;
+    room.clearBoon = id;
+    const boon = CLEAR_BOONS[id];
+    boon.grant();
+    updateShop();
+    updateUI(boon.name + " claimed!");
+    return true;
 }
 
 function buyUpgrade(id) {
@@ -1565,10 +1930,7 @@ function buyUpgrade(id) {
     goldSpent += offer.cost;
     dungeon.shopPurchased = true;
     if (id === "vitality") player.maxHealth += 5;
-    if (id === "damage") {
-        player.damageBonus += 5;
-        player.inventory.weapons.forEach(weapon => weapon.damage += 5);
-    }
+    if (id === "damage") player.addWeaponDamage(5);
     if (id === "storm") player.stormSpark = true;
     if (id === "fire") player.fireRing = true;
     document.getElementById("shop-message").textContent = offer.name + " acquired! " +
@@ -1661,6 +2023,7 @@ function animate(time = performance.now()) {
             resetKeys();
             onGameOver();
         } else {
+            dungeon.room.updateClearChest();
             dungeon.room.doors.forEach(door => door.update());
         }
     } else {
@@ -1761,6 +2124,7 @@ if (subBtn) subBtn.addEventListener("click", submit);
 if (retBtn) retBtn.addEventListener("click", retry);
 
 for (const id of Object.keys(SHOP_OFFERS)) document.getElementById("buy-" + id).addEventListener("click", () => buyUpgrade(id));
+for (const id of Object.keys(CLEAR_BOONS)) document.getElementById("boon-" + id).addEventListener("click", () => claimClearBoon(id));
 document.getElementById("shop-continue").addEventListener("click", leaveFloor);
 document.getElementById("shop-return").addEventListener("click", returnToFloor);
 document.getElementById("floor-shop").addEventListener("cancel", event => { event.preventDefault(); returnToFloor(); });

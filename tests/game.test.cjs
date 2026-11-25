@@ -598,10 +598,11 @@ test('equipped sword attacks arrow direction even with a bow collected', () => {
     assert.equal(g.run('player.swing.angle'),-Math.PI/2);
 });
 
-test('enemy population grows every two floors with a cap and guaranteed elements and ammo', () => {
+test('normal enemy population grows every two floors with guaranteed elements and ammo plus milestone bosses', () => {
     const g=game();
     for(let floor=1;floor<=21;floor++){
-        assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Enemy).length'),Math.min(12,4+Math.floor((floor-1)/2)));
+        assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Enemy && e.role!=="king").length'),Math.min(12,4+Math.floor((floor-1)/2)));
+        assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Enemy && e.role==="king").length'),floor%4===0?1:0);
         assert.equal(g.run('new Set(dungeon.room.entities.filter(e=>e instanceof Enemy).map(e=>e.element)).size'),3);
         assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Item && e.type==="arrows").length'),2);
         g.run('dungeon.nextLevel()');
@@ -714,6 +715,153 @@ test('reserved player spawns stay at least 280px from every enemy across floors 
     }
 });
 
+test('Skipper commits to its warned landing, can be dodged, and cannot leap through walls', () => {
+    const g = game();
+    g.run(arena + `
+        const skipper = new Enemy(45, 80, "goo", "skipper");
+        player.pos = { x: 125, y: 85 };
+        skipper.update(0.01);
+    `);
+    assert.equal(g.run('skipper.leapLanding.x'), 137.5);
+    assert.equal(g.run('player.health'), 100);
+    g.run('player.pos.y += 60; skipper.update(0.5)');
+    assert.equal(g.run('center(skipper).x'), 137.5);
+    assert.equal(g.run('player.health'), 100);
+    g.run(`
+        skipper.pos = { x: 45, y: 80 };
+        player.pos = { x: 125, y: 85 };
+        dungeon.room.tiles = [new Tile(100, 70, 40, false)];
+        const landing = skipper.findLeapLanding(dungeon.room, center(skipper), center(player));
+    `);
+    assert(g.run('landing.x + skipper.width / 2 <= 100'));
+});
+
+test('Prism and the Slime King warn before firing locked volleys, with fire in the boss second phase', () => {
+    const g = game();
+    g.run(arena + `
+        const prism = new Enemy(45, 80, "goo", "prism");
+        player.pos = { x: 175, y: 85 };
+        prism.shotTimer = 0;
+        prism.update(0.01);
+    `);
+    assert.equal(g.run('arrows.length'), 0);
+    assert.equal(g.run('prism.volley.angles[1]'), 0);
+    g.run('player.pos.y += 60; prism.update(0.66)');
+    assert.equal(g.run('arrows.length'), 3);
+    assert.equal(g.run('arrows[1].vel.y'), 0);
+    g.run(`
+        const king = new Enemy(90, 50, "goo", "king");
+        player.pos = { x: 245, y: 70 };
+        king.health = king.maxHealth / 2;
+        king.shotTimer = 0;
+        king.update(0.01);
+        king.update(0.66);
+    `);
+    assert.equal(g.run('arrows.filter(shot => shot.element === "fire").length'), 5);
+    g.run(`
+        player.pos = { x: 155, y: 70 };
+        king.update(0.01);
+    `);
+    assert.equal(g.run('king.attackTimer'), 0.75);
+    assert.equal(g.run('player.health'), 100);
+    g.run('king.update(0.75)');
+    assert.equal(g.run('player.health'), 79);
+});
+
+test('the optional boss is reachable and drops one crown and 25 gold', () => {
+    const g = game();
+    g.run(`
+        dungeon.floor = 3;
+        dungeon.nextLevel();
+        const king = dungeon.room.entities.find(e => e.role === "king");
+        const canReachKing = dungeon.room.findPath(player, center(king)).length > 0;
+        player.pos = { x: 935, y: 220 };
+        dungeon.room.doors[0].update();
+        leaveFloor();
+    `);
+    assert.equal(g.run('canReachKing'), true);
+    assert.equal(g.run('king.dead'), false);
+    assert.equal(g.run('dungeon.floor'), 5);
+    g.run(`
+        dungeon.floor = 3;
+        dungeon.nextLevel();
+        const returningKing = dungeon.room.entities.find(e => e.role === "king");
+        returningKing.onHit(10000);
+        returningKing.destroy();
+        const crown = dungeon.room.entities.find(e => e.type === "slime-crown");
+        const coins = dungeon.room.entities.find(e => e.type === "coin");
+        player.health = 48;
+        player.pos = { ...crown.pos };
+        crown.update(0);
+        crown.update(0);
+        player.pos = { ...coins.pos };
+        coins.update(0);
+    `);
+    assert.equal(g.run('enemiesSlain'), 1);
+    assert.equal(g.run('player.maxHealth'), 110);
+    assert.equal(g.run('player.health'), 73);
+    assert.equal(g.run('goldCollected'), 25);
+    assert.equal(g.run('dungeon.room.entities.filter(e => e.type === "slime-crown").length'), 1);
+});
+
+test('Rune Circuit starts scrambled, opens once via E, and upgrades a later bow', () => {
+    const g = game();
+    g.run('dungeon.nextLevel(); const stones = dungeon.room.entities.filter(e => e instanceof RuneStone)');
+    assert.equal(g.run('stones.length'), 4);
+    assert(g.run('stones.some(stone => stone.mask !== stone.rightMask)'));
+    for (let i = 0; i < 4; i++) {
+        g.run(`player.pos = { x: stones[${i}].pos.x + 7.5, y: stones[${i}].pos.y + 10 }`);
+        for (let turn = 0; turn < 3 && g.run(`stones[${i}].mask !== stones[${i}].rightMask`); turn++) {
+            g.listeners.keydown({ key: 'e', preventDefault() {} });
+            g.run('player.update(0)');
+        }
+    }
+    g.run('interactNearby()');
+    assert.equal(g.run('dungeon.room.entities.filter(e => e.type === "tempered-shard").length'), 1);
+    g.run(`
+        const shard = dungeon.room.entities.find(e => e.type === "tempered-shard");
+        player.pos = { ...shard.pos };
+        shard.update(0);
+        openFloorShop();
+        leaveFloor();
+        new Item(player.pos.x, player.pos.y, "bow").update(0);
+    `);
+    assert.equal(g.run('player.inventory.weapons[0].damage'), 28);
+    assert.equal(g.run('player.inventory.weapons[1].damage'), 23);
+    g.run('initGame()');
+    assert.equal(g.run('player.weapon.damage'), 25);
+});
+
+test('touch interaction reveals the cache once and its charm reduces goo slow for the run', () => {
+    const g = game();
+    g.run(`
+        dungeon.nextLevel();
+        dungeon.nextLevel();
+        const cache = dungeon.room.entities.find(e => e instanceof HiddenCache);
+        const approach = dungeon.room.findPath(player, center(cache));
+        player.pos = { x: 45, y: cache.pos.y };
+    `);
+    assert(g.run('approach.length > 0'));
+    assert.equal(g.run('cache.gate.walkable'), false);
+    g.elements.get('touch-interact').handlers.click();
+    g.run('player.update(0); interactNearby()');
+    assert.equal(g.run('cache.gate.walkable'), true);
+    assert.equal(g.run('dungeon.room.entities.filter(e => e.type === "mossstep-charm").length'), 1);
+    g.run(`
+        const charm = dungeon.room.entities.find(e => e.type === "mossstep-charm");
+        player.pos = { ...charm.pos };
+        charm.update(0);
+        new GooPuddle(player.pos.x, player.pos.y, "goo").update(0);
+        player.movement(0);
+        updateStats();
+    `);
+    assert.equal(g.elements.get('speed-stat').textContent, '180 px/s');
+    g.run('openFloorShop(); leaveFloor()');
+    assert.equal(g.run('player.gooSpeedModifier'), 0.75);
+    g.run('initGame()');
+    assert.equal(g.run('player.gooSpeedModifier'), 0.5);
+});
+
 test('Lantern Order resets mistakes, opens one optional reward, and accepts E once per press', () => {
     const g=game();g.run('dungeon.room.puzzle.order=[0,2,1]');
     assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Lantern).length'),3);
@@ -728,7 +876,7 @@ test('Lantern Order resets mistakes, opens one optional reward, and accepts E on
     assert.equal(g.run('dungeon.room.puzzle.progress'),1);
     g.listeners.keydown({key:'e',repeat:true,preventDefault(){}});g.run('player.update(0)');
     assert.equal(g.run('dungeon.room.puzzle.progress'),1);
-    g.run('player.pos={x:205,y:125};interactLantern();player.pos={x:125,y:125};interactLantern();interactLantern()');
+    g.run('player.pos={x:205,y:125};interactNearby();player.pos={x:125,y:125};interactNearby();interactNearby()');
     assert.equal(g.run('dungeon.room.puzzle.solved'),true);
     assert.equal(g.run('dungeon.room.entities.filter(e=>e instanceof Item&&e.type==="lantern-heart").length'),1);
     assert.equal(g.run('player.lanternHeart'),false);
@@ -755,7 +903,7 @@ test('lantern order is a shuffled permutation fixed during attempts with no solu
         g.run('initGame()');
         const order=JSON.parse(g.run('JSON.stringify(dungeon.room.puzzle.order)'));
         assert.deepEqual([...order].sort(),[0,1,2]);seen.add(order.join(','));
-        g.run('var wrongIndex=dungeon.room.puzzle.order[0]===0?1:0;player.pos={x:45+wrongIndex*80,y:125};interactLantern();updateStats();');
+        g.run('var wrongIndex=dungeon.room.puzzle.order[0]===0?1:0;player.pos={x:45+wrongIndex*80,y:125};interactNearby();updateStats();');
         assert.deepEqual(JSON.parse(g.run('JSON.stringify(dungeon.room.puzzle.order)')),order);
         assert.equal(g.run('dungeon.room.puzzle.progress'),0);
         assert.equal(g.run('dungeon.room.puzzle.errorUntil-runTime'),0.7);
@@ -799,4 +947,108 @@ test('touch action buttons switch weapons and interact, while shop and retry cle
     move.handlers.pointerdown(event);g.run('openFloorShop()');assert.equal(g.run('touchKeys.right'),false);
     move.handlers.pointerdown(event);g.elements.get('touch-switch').handlers.click();assert.equal(g.run('keys.switch||touchKeys.right'),false);
     g.run('returnToFloor();initGame()');assert.equal(g.run('Object.values(touchKeys).some(Boolean)'),false);
+});
+
+test('clearing a floor puts one chest in reach of the exit, and only a living player can claim it', () => {
+    const g = game();
+    g.run(`dungeon.room.entities = [new Enemy(400, 200)]; animate(0);`);
+    assert.equal(g.run('Boolean(dungeon.room.clearChest)'), false);
+    g.run(`dungeon.room.entities[0].dead = true; animate(0); const chest = dungeon.room.clearChest;`);
+    assert(g.run('dist(center(chest), { x: 960, y: 220 }) <= 40 && dungeon.room.isWalkable(chest.pos.x, chest.pos.y, chest.width, chest.height)'));
+    g.run(`player.pos = { ...chest.pos }; player.health = 0; chest.update();`);
+    assert.equal(g.run('goldCollected'), 0);
+    g.run(`player.health = 1; animate(0); animate(0);`);
+    assert.equal(g.run('goldCollected'), 50);
+    assert.equal(g.run('dungeon.room.clearChest === chest && chest.dead'), true);
+});
+
+test('the exit offers one clear boon after collecting the chest, independent of a paid upgrade', () => {
+    const g = game();
+    g.run('openFloorShop()');
+    assert.equal(g.elements.get('clear-boons').hidden, true);
+    assert.equal(g.run('claimClearBoon("bounty")'), false);
+    g.run(`returnToFloor(); dungeon.room.entities = []; animate(0); openFloorShop();`);
+    assert.equal(g.elements.get('clear-boons').hidden, true);
+    g.run(`returnToFloor(); player.pos = { ...dungeon.room.clearChest.pos }; animate(0); openFloorShop();`);
+    assert.equal(g.elements.get('clear-boons').hidden, false);
+    g.elements.get('boon-bounty').handlers.click();
+    assert.equal(g.run('goldCollected'), 75);
+    assert.equal(g.run('buyUpgrade("damage")'), true);
+    g.run('returnToFloor(); openFloorShop()');
+    assert.equal(g.run('claimClearBoon("quiver")'), false);
+    assert.equal(g.run('player.ammo'), 0);
+    g.run('leaveFloor(); openFloorShop()');
+    assert.equal(g.elements.get('clear-boons').hidden, true);
+});
+
+test('a last-slime arrow kill beside the door unlocks the boon before the shop opens', () => {
+    const g = game();
+    g.run(`player.pos = { x: 935, y: 210 }; const lastSlime = new Enemy(921, 205);
+        lastSlime.health = 1; dungeon.room.entities = [lastSlime];
+        arrows.push(new Arrow(930, 219, { x: -1, y: 0 })); animate(0);`);
+    assert.equal(g.run('lastSlime.dead && shopOpen'), true);
+    assert.equal(g.run('goldCollected'), 50);
+    assert.equal(g.elements.get('clear-boons').hidden, false);
+});
+
+test('clear boons grant distinct run rewards and work even before finding a bow', () => {
+    const g = game();
+    const clear = `dungeon.room.entities = []; animate(0); player.pos = { ...dungeon.room.clearChest.pos }; animate(0);`;
+    g.run(clear);
+    assert.equal(g.run('claimClearBoon("edge")'), false);
+    g.run('openFloorShop()');
+    assert.equal(g.run('claimClearBoon("__proto__")'), false);
+    assert.equal(g.run('claimClearBoon("edge")'), true);
+    assert.equal(g.run('player.weapon.damage'), 27);
+    g.run('leaveFloor();' + clear + 'openFloorShop();');
+    assert.equal(g.run('claimClearBoon("quiver")'), true);
+    assert.equal(g.run('player.ammo'), 12);
+    g.run('initGame()');
+    assert.equal(g.run('player.ammo'), 0);
+    assert.equal(g.run('player.weapon.damage'), 25);
+});
+
+test('a quick Q press switches weapons even when released before the next frame', () => {
+    const g = game();
+    g.run('player.inventory.weapons.push(new Bow());');
+    const q = { key: 'q', preventDefault() {} };
+    g.listeners.keydown(q);
+    g.listeners.keyup(q);
+    g.run('player.update(0); player.update(0);');
+    assert.equal(g.run('player.weapon.name'), 'Bow');
+});
+
+test('the first floor offers one marked bow beyond the Lantern alcove', () => {
+    const g = game();
+    g.run(`let lootSeed = 17; Math.random = () => (lootSeed = (lootSeed * 1664525 + 1013904223) >>> 0) / 4294967296;`);
+    for (let i = 0; i < 20; i++) {
+        g.run('initGame()');
+        assert.equal(g.run(`dungeon.room.entities.filter(e => e instanceof Item && e.type === "bow").length`), 1);
+        assert.equal(g.run(`dungeon.room.entities.some(e => e.armory && e.pos.x >= 280 && e.pos.x < 480)`), true);
+    }
+});
+
+test('starting loot has five reachable tiles clear of arrivals, enemies, and the exit chest', () => {
+    const g = game();
+    assert.equal(g.run(`(() => {
+        let seed = 13;
+        Math.random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+        const tileKey = ({x, y}) => Math.floor(x / 40) + "," + Math.floor(y / 40);
+        for (let run = 0; run < 12; run++) {
+            initGame();
+            for (let floor = 1; floor <= 8; floor++) {
+                const room = dungeon.room;
+                const occupied = new Set([tileKey(dungeon.spawn), "23,5", ...room.entities.filter(e => e instanceof Enemy).map(e => tileKey(center(e)))]);
+                const loot = room.entities.filter(e => e instanceof Item);
+                if (loot.length !== 5 || loot.filter(e => e.type === "arrows").length !== 2) return false;
+                for (const item of loot) {
+                    const key = tileKey(center(item));
+                    if (occupied.has(key) || !room.findPath(player, center(item)).length) return false;
+                    occupied.add(key);
+                }
+                dungeon.nextLevel();
+            }
+        }
+        return true;
+    })()`), true);
 });

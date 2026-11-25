@@ -160,4 +160,12 @@ At up to 1100px width, touch layout uses a compact HUD, a player-following enlar
 
 **Status:** Implemented in working tree; uncommitted. Supersedes D-018 mobile HUD/sidebar layout.
 
+**Partially superseded:** Controls below the dungeon replaced by the transparent overlay in D-020.
+
 The owner requested the minimum mobile interface with no sidebars, just the dungeon floor. On coarse-pointer screens up to 1100px wide, hide the entire header/HUD and both sidebars. The dungeon uses the remaining viewport above the essential move/aim pads and switch/interact controls. Keep weapon/ammo in that control strip, in-world health/hit/puzzle feedback, and the shop/game-over screens when needed. Hidden elements remain in the DOM for shared runtime updates. Desktop layout remains as before.
+
+## D-020: Transparent touch overlay and icon actions (2026-10-30)
+
+**Status:** Implemented, uncommitted. Supersedes the separate mobile control strip in D-018/D-019.
+
+The owner requested a transparent joystick bar with the dungeon visible beneath and simple icons replacing switch/interact text. Controls overlay the bottom of the dungeon; the container has no background/border and joysticks/buttons are translucent. Weapon switch uses a sword with swap arrows; interaction uses a hand. Button labels remain available through accessible names/tooltips, while visible labels are removed. Weapon/ammo text and pad labels remain for orientation. Buttons keep 48px targets; only interactive elements capture pointer input. Existing gameplay/input behavior is preserved.

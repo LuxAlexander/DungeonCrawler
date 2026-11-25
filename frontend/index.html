@@ -20,8 +20,8 @@
                 <div><dt>Time</dt><dd id="run-time">0:00</dd></div>
                 <div><dt>Health</dt><dd id="health-stat">100 / 100</dd></div>
                 <div><dt>Enemies left</dt><dd id="remaining-count">4</dd></div>
-                <div><dt>Enemy health</dt><dd id="enemy-health-scale">100%</dd></div>
-                <div><dt>Enemy hit</dt><dd id="enemy-hit-stat">12</dd></div>
+                <div><dt>Base slime health</dt><dd id="enemy-health-scale">100%</dd></div>
+                <div><dt>Base slime hit</dt><dd id="enemy-hit-stat">12</dd></div>
             </dl>
             <h3>YOUR BUILD</h3>
             <dl class="stat-list">
@@ -39,9 +39,11 @@
                 <li><span class="slime-dot moss-dot" aria-hidden="true"></span><span><strong>Moss</strong><small>Goo slows your steps</small></span></li>
                 <li><span class="slime-dot fire-dot" aria-hidden="true"></span><span><strong>Ember</strong><small>Fire burns underfoot</small></span></li>
                 <li><span class="slime-dot water-dot" aria-hidden="true"></span><span><strong>Tide</strong><small>Water carries you forward</small></span></li>
+                <li><span class="slime-dot skipper-dot" aria-hidden="true"></span><span><strong>Skipper</strong><small>Step out of its marked landing zone</small></span></li>
+                <li><span class="slime-dot prism-dot" aria-hidden="true"></span><span><strong>Prism</strong><small>Dashed lines warn of a spread shot</small></span></li>
             </ul>
             <h3>CONTROLS</h3>
-            <p class="panel-note">WASD: move<br>Arrows: directional attack<br>Two arrows: diagonal attack<br>Space: attack<br>Q: switch weapon<br>E: activate nearby lantern</p>
+            <p class="panel-note">WASD: move<br>Arrows: directional attack<br>Two arrows: diagonal attack<br>Space: attack<br>Q: switch weapon<br>E: interact nearby</p>
         </aside>
 
         <div id="game-wrapper">
@@ -78,7 +80,7 @@
             <div id="game-viewport"><canvas id="space" aria-label="Dungeon game area"></canvas></div>
             <section id="touch-controls" aria-label="Touch game controls">
                 <div class="touch-pad-group"><span>MOVE</span><div id="move-pad" class="touch-pad" aria-label="Drag to move"><span class="pad-cross" aria-hidden="true">✥</span><span id="move-pad-thumb" class="pad-thumb"></span></div></div>
-                <div class="touch-actions"><span id="touch-weapon">Sword</span><button type="button" id="touch-switch">Switch weapon</button><button type="button" id="touch-interact">Interact · lantern</button></div>
+                <div class="touch-actions"><span id="touch-weapon">Sword</span><button type="button" id="touch-switch" aria-label="Switch weapon" title="Switch weapon"><svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M10 23 23 10l1-5-5 1L6 19m-1-3 8 8m-9 3 5-5"/><path d="M4 10a12 12 0 0 1 19-6m-5-1 5 1-1 5M28 22a12 12 0 0 1-19 6m5 1-5-1 1-5"/></svg></button><button type="button" id="touch-interact" aria-label="Interact nearby" title="Interact"><svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M10 28 5 18q-1-3 2-3l5 5V6q0-4 4-3v13-6q0-3 4-2v9-5q0-3 4-2v8-3q0-3 4-2v9l-4 6Z"/></svg></button></div>
                 <div class="touch-pad-group"><span>AIM &amp; ATTACK</span><div id="aim-pad" class="touch-pad" aria-label="Drag to aim and attack"><span class="pad-cross" aria-hidden="true">✥</span><span id="aim-pad-thumb" class="pad-thumb"></span></div></div>
             </section>
         </div>
@@ -98,6 +100,15 @@
         <h2 id="shop-title">A little stronger.<br>A little deeper.</h2>
         <p class="shop-intro">Trade your treasure for another chance down below.</p>
         <p class="shop-purse">YOUR PURSE <strong><span id="shop-gold">0</span> GOLD</strong></p>
+        <section id="clear-boons" hidden aria-labelledby="clear-boons-title">
+            <h3 id="clear-boons-title">FLOOR CLEAR · CHOOSE A BOON</h3>
+            <p id="clear-boon-status" role="status"></p>
+            <div class="clear-boon-options">
+                <button type="button" id="boon-edge">Slimeforged Edge <small>+2 weapon damage</small></button>
+                <button type="button" id="boon-quiver">Explorer's Quiver <small>+12 arrows</small></button>
+                <button type="button" id="boon-bounty">Guild Bounty <small>+25 gold</small></button>
+            </div>
+        </section>
         <div class="shop-offers">
             <article class="shop-offer"><span class="offer-tier">SMALL · 25 GOLD</span><h3>Heartstone</h3><p>+5 maximum health.<br>Carry a little more courage.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-vitality">BUY · 25 GOLD</button></article>
             <article class="shop-offer"><span class="offer-tier">MEDIUM · 50 GOLD</span><h3>Honed Steel</h3><p>+5 damage to sword and bow.<br>Even a bow found later benefits.</p><span class="offer-tag">STACKABLE · THIS RUN</span><button type="button" id="buy-damage">BUY · 50 GOLD</button></article>
